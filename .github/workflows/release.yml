@@ -1,7 +1,7 @@
 name: Build installer
 
 # Builds the Windows installer on GitHub's own Windows machine. Run it by hand (Actions > Build
-# installer > Run workflow) for a downloadable artifact, or push a vX.Y.Z tag to release it:
+# installer > Run workflow) for a downloadable artifact; tick "release", or push a vX.Y.Z tag, to release it:
 # the installer is then signed and published as the latest release, which every Altbase with
 # "Check for Altbase updates" on finds within the hour and installs.
 #
@@ -15,6 +15,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish it: tag v<version> (from tauri.conf.json), sign it and release it to everyone"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -61,8 +66,8 @@ jobs:
           if-no-files-found: error
 
   sign:
-    # Only for a pushed v* tag.
-    if: github.ref_type == 'tag'
+    # For a pushed v* tag, or a manual run with "release" ticked.
+    if: github.ref_type == 'tag' || inputs.release
     needs: windows
     runs-on: ubuntu-latest
     permissions:
@@ -108,7 +113,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.release
     needs: [windows, sign]
     runs-on: ubuntu-latest
     permissions:

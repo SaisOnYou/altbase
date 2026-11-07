@@ -61,9 +61,11 @@ Everyone's Altbase picks up a new version by itself. To release one:
 
 1. Raise the version in `src-tauri/tauri.conf.json`, `package.json` and `src-tauri/Cargo.toml`
    (all three the same, for example `1.0.4`).
-2. Commit, then push a tag with that version: `git tag v1.0.4 && git push origin v1.0.4`.
-3. **Build installer** runs on its own, signs the installer with the `ALTBASE_UPDATE_KEY` secret
-   and publishes the release. Within the hour every Altbase finds it.
+2. Commit and push that change.
+3. On GitHub: **Actions → Build installer → Run workflow**, tick **release**, then **Run workflow**.
+   (Pushing a `v1.0.4` tag does the same.) It builds the installer, signs it with the
+   `ALTBASE_UPDATE_KEY` secret, tags the commit and publishes the release. Within the hour every
+   Altbase finds it.
 
 The secret (Settings → Secrets and variables → Actions) holds the private half of the key whose
 public half is `PUBLIC_KEY` in `src-tauri/src/self_update.rs`. If the two don't match, the release
