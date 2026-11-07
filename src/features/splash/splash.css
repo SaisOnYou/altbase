@@ -1,0 +1,62 @@
+/* The start-up splash (Splash.tsx): one moment. The clay disc rises in, the ring glides over to
+   join it, the name settles beneath. About 1.1 s, then it holds until the window grows
+   (`splash_done`) and fades. Follows the theme main.tsx set before first paint. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--ground);
+  color: var(--fg);
+  transition: opacity 300ms var(--ease-out);
+}
+.splash.out {
+  opacity: 0;
+  pointer-events: none;
+}
+.splash-mark {
+  overflow: visible;
+}
+.splash-disc {
+  fill: var(--splash-accent, var(--accent));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: splash-disc 520ms var(--ease-out) both;
+}
+.splash-ring {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 1.2;
+  animation: splash-ring 700ms 220ms var(--spring) both;
+}
+.splash-word {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  animation: splash-word 480ms 600ms var(--ease-out) both;
+}
+
+@keyframes splash-disc {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes splash-ring {
+  from { opacity: 0; transform: translateX(7px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes splash-word {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-disc,
+  .splash-ring,
+  .splash-word {
+    animation: none;
+  }
+}

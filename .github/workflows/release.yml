@@ -1,0 +1,86 @@
+name: Build installer
+
+# Builds the Windows installer on GitHub's own Windows machine, so you don't need Rust, the C++
+# Build Tools, Perl or Inno Setup on your PC. Run it by hand (Actions > Build installer > Run
+# workflow) or push a v* tag. The installer appears as a downloadable artifact on the run's page,
+# and on a v* tag also as a draft release you can publish (private repo: only you and people you
+# invite can see it).
+#
+# Hardening: every action is pinned to a full commit hash (a moved tag can't change what runs),
+# the build job can only read the repo, and no signing keys or other secrets are used at all.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - id: v
+        run: |
+          $version = (Get-Content -Raw src-tauri\tauri.conf.json | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            echo "::error::tag $env:GITHUB_REF_NAME is not v$version, the version in src-tauri/tauri.conf.json"
+            exit 1
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: Inno Setup 6.6+
+        run: choco upgrade innosetup --no-progress -y
+      - run: powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: Altbase-Setup-${{ steps.v.outputs.version }}
+          path: dist-installer/Altbase-Setup-${{ steps.v.outputs.version }}.exe
+          if-no-files-found: error
+
+  release:
+    # Only for a pushed v* tag; a manual run just leaves the artifact.
+    if: github.ref_type == 'tag'
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Altbase-Setup-${{ needs.windows.outputs.version }}
+          path: dist
+      - name: Draft release with SHA-256 sums
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.windows.outputs.tag }}
+          VERSION: ${{ needs.windows.outputs.version }}
+        run: |
+          sha256sum -- * > SHA256SUMS.txt
+          printf 'Not code-signed: SmartScreen warns on first run (More info > Run anyway).\n\n~~~\n%s\n~~~\n' "$(cat SHA256SUMS.txt)" > ../notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" ./* --clobber
+          else
+            gh release create "$TAG" ./* --draft --target "$GITHUB_SHA" --title "Altbase $VERSION" --notes-file ../notes.md
+          fi

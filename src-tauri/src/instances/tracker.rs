@@ -1,0 +1,2795 @@
+//! Following the clients Altbase starts: one entry per launch, polled once a second.
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
+use std::time::{Duration, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Manager};
+
+use super::logwatch::{self, LogFacts};
+use super::metrics::{MEM_STRIKES, mem_strikes, mem_throttled};
+use super::process::{self, ProcInfo};
+use crate::model::{CrashKind, Instance, InstanceState, LaunchInfo, LaunchTarget, Limits, WindowLayout};
+
+/// A client that vanishes this soon after launch without reaching a game may come back under
+/// a new PID (Roblox's updater relaunches it, research M8/M9), or, behind a bootstrapper, may
+/// not have started yet.
+const REBIND_MS: i64 = 120_000;
+const MAX_ENDED: usize = 30;
+/// How long a teleport may take to reach its next game; then it failed (`LogFacts::teleporting`).
+const TELEPORT_MS: i64 = 60_000;
+/// How far a client's start may be from its log file's creation, in seconds.
+const LOG_SKEW_SECS: u64 = 3;
+// Notes are made in the current language and compared against these (a note made before a
+// language switch stops matching until the next poll remakes it).
+/// The note of a client whose log signed in as a different user than its account.
+pub fn wrong_account() -> String {
+    tr!("Signed in as another account")
+}
+pub fn challenged() -> String {
+    tr!("Roblox wants a human check")
+}
+/// The note of a client Roblox refused at sign-in (its error 403 dialog).
+pub fn auth_failed() -> String {
+    tr!("Roblox refused the sign-in (error 403)")
+}
+/// The note of a client that ended without Altbase closing it and with nothing else to blame.
+pub fn unexpected() -> String {
+    tr!("Closed unexpectedly")
+}
+/// The note of a running client whose window stopped responding.
+pub fn hung() -> String {
+    tr!("Not responding")
+}
+/// The note of a client the user (or Altbase) closed.
+pub fn closed() -> String {
+    tr!("Closed")
+}
+/// Polls (about seconds) a client's window must be not responding in a row to count as hung.
+const HANG_POLLS: u32 = 30;
+/// Polls a client's window must be not responding in a row for its limits to come off.
+const HANG_FREE_POLLS: u32 = 5;
+/// A log growing this long after its process went wasn't that process's last words ...
+const WRITER_AFTER_MS: i64 = 2_000;
+/// ... and proves a running client for this long: an idle client logs every 2 minutes (measured).
+const WRITER_PROOF_MS: i64 = 150_000;
+/// How long a client that reached a game, whose process went while another Roblox process runs, is
+/// kept before it counts as ended: Roblox can hand the game to a client already running (its tray
+/// copy), which goes on writing this client's log. Long enough for `WRITER_AFTER_MS` to see the
+/// log grow at least once more; a plain crash, with no other Roblox running, ends at once.
+const HANDOFF_WAIT_MS: i64 = 8_000;
+
+pub struct Tracker {
+    inner: Mutex<Vec<Entry>>,
+    /// Accounts being launched (`claim`); locked before `inner`.
+    claimed: Mutex<Vec<i64>>,
+    /// Clients that ended badly since the last `take_crashes`; locked after `inner`.
+    crashes: Mutex<Vec<Ended>>,
+    /// What `persist` last wrote to the database; locked after `inner`.
+    persisted: Mutex<Vec<Saved>>,
+    /// The window layout's slots: account id by slot (`reserve`). In memory only; never locked
+    /// together with `inner`.
+    slots: Mutex<Vec<i64>>,
+    /// A running batch's accounts: their slots are kept while they start (`reserve_slots`).
+    slots_pending: Mutex<Vec<i64>>,
+    /// How many slots the Fit grid was last laid out for; 0 after anything else placed windows.
+    fit_n: AtomicUsize,
+    /// Bumped by each re-layout (and Tile): an older one still placing stops (the newer has every window).
+    pub(crate) layout_gen: AtomicUsize,
+}
+
+/// One window for the layout: (instance id, pid, window rect, client size the tiny sweep keeps).
+type Place = (String, u32, super::window::Rect, Option<(u32, u32)>);
+
+/// The window-layout placements, on Altbase's monitor: for `arrived` (instance id, pid, account; its
+/// slot reserved now if need be) first, then, when the Fit grid's size changed, every other client
+/// already placed and not minimized. With the re-layout generation they belong to.
+/// The frame size to lay windows out with (Roblox windows share a style): measured on the first of
+/// `pids` that isn't minimized; with none to measure, the last one measured, at first a titled
+/// window's at the system DPI (`window::default_frame`).
+pub fn frame_size(pids: impl IntoIterator<Item = u32>) -> (i32, i32) {
+    static LAST_FRAME: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+    let mut last = LAST_FRAME.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(f) = pids.into_iter().find_map(super::window::frame_of) {
+        *last = Some(f);
+    }
+    *last.get_or_insert_with(super::window::default_frame)
+}
+
+fn plan_layout(app: &AppHandle, s: &crate::App, v: &crate::model::Settings, arrived: Option<(&str, u32, i64)>) -> (Vec<Place>, usize) {
+    let layout = v.window_layout;
+    // Anything else placed windows since: the next Fit arrival lays the whole grid out again.
+    if layout != WindowLayout::Fit {
+        s.tracker.fit_n.store(0, Ordering::Relaxed);
+    }
+    let round = s.tracker.layout_gen.load(Ordering::Relaxed);
+    let Some(area) = (layout != WindowLayout::Off)
+        .then(|| app.get_webview_window("main").and_then(|w| w.hwnd().ok()).and_then(super::window::work_area))
+        .flatten()
+    else {
+        return (Vec::new(), round);
+    };
+    // Minimized ones stay so (the user may have minimized it as it came up): placing would bring them
+    // back on screen. They keep their slot.
+    let visible = |pid| matches!(process::main_window(pid), Some((_, false)));
+    let mut list: Vec<(String, u32, usize)> = arrived
+        .map(|(id, pid, account)| (id.to_owned(), pid, s.tracker.slot_of(account).0))
+        .filter(|c| visible(c.1))
+        .into_iter()
+        .collect();
+    let n = s.tracker.slots().len();
+    let mut round = round;
+    if layout == WindowLayout::Fit && s.tracker.fit_n.swap(n, Ordering::Relaxed) != n {
+        round = s.tracker.layout_gen.fetch_add(1, Ordering::Relaxed) + 1;
+        let first = arrived.map(|a| a.0.to_owned());
+        // The accounts the user plays keep their window (a slot can come from readopt or Tile).
+        let played = s.db.full_quality_accounts().unwrap_or_default();
+        list.extend(
+            s.tracker
+                .slotted()
+                .into_iter()
+                .filter(|o| Some(&o.0) != first.as_ref() && !played.contains(&o.3) && visible(o.1))
+                .map(|(id, pid, slot, _)| (id, pid, slot)),
+        );
+    }
+    let frame = frame_size(list.iter().map(|c| c.1));
+    let micro = (v.micro_width, v.micro_height);
+    let places = list.into_iter().filter_map(|(id, pid, slot)| super::window::slot_rect(layout, slot, n, area, frame, micro).map(|(r, small)| (id, pid, r, small))).collect();
+    (places, round)
+}
+
+/// Puts `places` in place, in order, then marks each `micro` as its placement made it (after, so a
+/// failed one isn't left marked small). Once a newer re-layout started, this one stops after the
+/// first `keep` (that newer one has the rest). Waits for the clients: not on the poll's thread.
+fn do_places(app: &AppHandle, places: Vec<Place>, keep: usize, round: usize) {
+    let s = app.state::<crate::App>();
+    for (i, (id, pid, rect, small)) in places.into_iter().enumerate() {
+        if i >= keep && s.tracker.layout_gen.load(Ordering::Relaxed) != round {
+            break;
+        }
+        match super::window::place(&id, pid, rect, small) {
+            Ok(()) => {
+                s.tracker.set_micro(&id, small);
+            }
+            Err(e) => log::debug!("instance {id}: not placed in the window layout: {e}"),
+        }
+    }
+}
+
+/// A batch is over: its accounts that never started give their slots up, and a Fit grid that
+/// shrank because of that is laid out again.
+pub fn layout_batch_done(app: &AppHandle) {
+    let s = app.state::<crate::App>();
+    s.tracker.end_batch_slots();
+    let Ok(v) = s.db.settings() else { return };
+    let (places, round) = plan_layout(app, &s, &v, None);
+    if !places.is_empty() {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || do_places(&app, places, 0, round));
+    }
+}
+
+/// Gives each of `accounts` a layout slot in `slots` (account ids by slot), in order: a slot it has
+/// it keeps; else the lowest one whose account isn't `live` and isn't asked for now; else a new
+/// one at the end. Then free slots at the end are dropped, so the count follows what runs (pure).
+pub fn reserve(slots: &mut Vec<i64>, accounts: &[i64], live: &dyn Fn(i64) -> bool) {
+    let free = |a: i64| !live(a) && !accounts.contains(&a);
+    for &a in accounts {
+        if slots.contains(&a) {
+            continue;
+        }
+        match slots.iter().position(|&s| free(s)) {
+            Some(i) => slots[i] = a,
+            None => slots.push(a),
+        }
+    }
+    while slots.last().is_some_and(|&s| free(s)) {
+        slots.pop();
+    }
+}
+
+/// What a restarted Altbase needs to follow a running client again (`readopt`), kept in the
+/// database while the client runs (`persist`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Saved {
+    inst: Instance,
+    btid: i64,
+    /// Start time of `inst.pid`, the client itself.
+    start_time: u64,
+    log: Option<PathBuf>,
+    offset: u64,
+    facts: LogFacts,
+    in_game_at: Option<i64>,
+}
+
+/// A client that ended badly (`crash_kind`), for the crash history.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Ended {
+    pub instance_id: String,
+    pub account_id: i64,
+    pub kind: CrashKind,
+    /// Unix ms.
+    pub at: i64,
+    pub uptime_ms: i64,
+    pub reason: Option<String>,
+    pub place_id: Option<i64>,
+    pub log: Option<PathBuf>,
+    pub pid: u32,
+    /// Unix ms.
+    pub started_at: i64,
+    /// From the launch to the client first being seen gone; `uptime_ms` can be up to `REBIND_MS`
+    /// later, when it is given up on.
+    pub died_after_ms: Option<i64>,
+    /// What was known of it at the end, for `autopsy`.
+    pub clues: String,
+}
+
+/// An account being launched; released on drop.
+pub struct Claim<'a> {
+    tracker: &'a Tracker,
+    account_id: i64,
+}
+
+impl Drop for Claim<'_> {
+    fn drop(&mut self) {
+        self.tracker.claimed.lock().unwrap_or_else(|e| e.into_inner()).retain(|&a| a != self.account_id);
+    }
+}
+
+/// One launch: what the UI sees plus what following it needs.
+#[derive(Clone)]
+struct Entry {
+    inst: Instance,
+    btid: i64,
+    /// Start time of `inst.pid` when first seen (0: already gone), so a reused PID is not it.
+    start_time: Option<u64>,
+    /// `inst.pid` is the client, not a bootstrapper standing in for it.
+    adopted: bool,
+    alive: bool,
+    log: Option<PathBuf>,
+    offset: u64,
+    facts: LogFacts,
+    /// The account's Roblox user id, looked up on the first poll.
+    expected_user: Option<i64>,
+    user_checked: bool,
+    closing: bool,
+    /// Unix ms the client first reached a server.
+    in_game_at: Option<i64>,
+    /// Polls in a row its window was not responding (`process::hung`).
+    hung_polls: u32,
+    /// Altbase gave up restarting it (the crash breaker): its note from then on.
+    gave_up: Option<String>,
+    /// Unix ms `rejoin` started working on relaunching it, which can take an hour: the one task for
+    /// it, it isn't pruned, and Close all ends it (`cancel_relaunches`).
+    relaunching: Option<i64>,
+    /// Unix ms the bootstrapper of a not yet adopted entry was first seen gone.
+    gone_at: Option<i64>,
+    /// Unix ms the process it follows was first seen gone (`gone_at` is only for a bootstrapper's).
+    died_at: Option<i64>,
+    /// Unix ms its log last grew after that (`WRITER_AFTER_MS`): another process is writing it.
+    writer_at: Option<i64>,
+    /// When last seen gone, a Roblox process no entry follows was running (`HANDOFF_WAIT_MS`).
+    stranger_seen: bool,
+    /// "Can't be read but still running" was logged.
+    unreadable_said: bool,
+    /// Handed out by `take_rejoins` (or ended): not again until it is back in a game.
+    rejoin_seen: bool,
+    /// Unix ms a teleport was first seen under way.
+    teleport_at: Option<i64>,
+    /// Unix ms it last entered Starting or Joining; None once it is in a game.
+    loading_since: Option<i64>,
+    /// The server last handed out by `take_servers`.
+    server_seen: Option<String>,
+    /// Memory samples in a row over `Settings.mem_restart_mb` (`check_memory`).
+    mem_strikes: u32,
+    /// In a game for `Settings.rejoin_every_hours` (`check_schedule`): due for a rejoin.
+    schedule_due: bool,
+    /// Being closed for its scheduled rejoin: it ends as `Scheduled`.
+    scheduled_restart: bool,
+    /// Its private memory at the last sample, MB.
+    mem_mb: u64,
+    /// Altbase is closing it for its memory (`mark_restart`): its exit is recorded as `Mem`.
+    mem_restart: bool,
+    /// Handed out by `first_in_game`, so "Minimize on launch" is done with it.
+    window_seen: bool,
+    /// A failure to read its log was already logged at warn (later ones go to debug).
+    log_warned: bool,
+}
+
+impl Entry {
+    fn new(inst: Instance, btid: i64, start_time: Option<u64>, adopted: bool) -> Entry {
+        Entry {
+            inst,
+            btid,
+            start_time,
+            adopted,
+            alive: true,
+            log: None,
+            offset: 0,
+            facts: LogFacts::default(),
+            expected_user: None,
+            user_checked: false,
+            closing: false,
+            in_game_at: None,
+            hung_polls: 0,
+            gave_up: None,
+            relaunching: None,
+            gone_at: None,
+            died_at: None,
+            writer_at: None,
+            stranger_seen: false,
+            unreadable_said: false,
+            rejoin_seen: false,
+            teleport_at: None,
+            loading_since: None,
+            server_seen: None,
+            mem_strikes: 0,
+            schedule_due: false,
+            scheduled_restart: false,
+            mem_mb: 0,
+            mem_restart: false,
+            window_seen: false,
+            log_warned: false,
+        }
+    }
+
+    fn hung(&self) -> bool {
+        self.hung_polls >= HANG_POLLS
+    }
+
+    /// Loading (for as long as a first load or a teleport may take: one stuck there is limited
+    /// again) or not responding: limits would only slow that down (`limits::plan`).
+    fn runs_free(&self, now: i64) -> bool {
+        let may_take = if self.in_game_at.is_none() { REBIND_MS } else { TELEPORT_MS };
+        self.hung_polls >= HANG_FREE_POLLS || self.loading_since.is_some_and(|t| now - t < may_take)
+    }
+
+    /// Over the memory limit long enough to be restarted.
+    fn mem_high(&self) -> bool {
+        self.mem_strikes >= MEM_STRIKES
+    }
+
+    /// Why it is worth launching again (`wants_rejoin`), or its memory (`Mem`) while it still
+    /// runs with no problem note.
+    fn stop_relaunch(&mut self) {
+        self.relaunching = None;
+        self.inst.relaunching = false;
+        self.inst.relaunch_problem = None;
+    }
+
+    fn cause(&self) -> Option<CrashKind> {
+        wants_rejoin(&self.inst, &self.facts, self.hung()).or_else(|| {
+            (self.mem_high() && self.inst.state != InstanceState::Exited && self.inst.note.is_none()).then_some(CrashKind::Mem)
+        })
+        .or_else(|| (self.schedule_due && self.inst.state == InstanceState::InGame && self.inst.note.is_none()).then_some(CrashKind::Scheduled))
+    }
+}
+
+impl Tracker {
+    pub fn new() -> Tracker {
+        Tracker {
+            inner: Mutex::new(Vec::new()),
+            claimed: Mutex::new(Vec::new()),
+            crashes: Mutex::new(Vec::new()),
+            persisted: Mutex::new(Vec::new()),
+            slots: Mutex::new(Vec::new()),
+            slots_pending: Mutex::new(Vec::new()),
+            fit_n: AtomicUsize::new(0),
+            layout_gen: AtomicUsize::new(0),
+        }
+    }
+
+    fn entries(&self) -> MutexGuard<'_, Vec<Entry>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Starts following a launch (state Starting).
+    pub fn register(&self, info: &LaunchInfo, target: LaunchTarget) -> Instance {
+        let inst = Instance {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: info.account_id,
+            pid: info.pid,
+            state: InstanceState::Starting,
+            target,
+            place_id: info.place_id,
+            job_id: None,
+            started_at: info.started_at,
+            ended_at: None,
+            via_bootstrapper: info.via_bootstrapper,
+            note: None,
+            rejoins: 0,
+            limits: Default::default(),
+            anti_afk: true,
+            afk_at: None,
+            throttled: false,
+            micro: false,
+            fps_cap: info.fps_cap,
+            relaunching: false,
+            relaunch_problem: None,
+            sign_in_problem: false,
+            micro_size: None,
+            applied_limits: Limits::default(),
+        };
+        let mut entries = self.entries();
+        // The account has a new client: nothing is waiting to bring back an older one any more.
+        for e in entries.iter_mut().filter(|e| e.inst.account_id == info.account_id) {
+            e.inst.relaunch_problem = None;
+        }
+        entries.push(Entry::new(inst.clone(), info.browser_tracker_id, info.pid_start, !info.via_bootstrapper));
+        inst
+    }
+
+    /// The running clients a restarted Altbase can follow again: those known to be the client
+    /// itself (not a bootstrapper standing in for it).
+    pub fn saved(&self) -> Vec<Saved> {
+        self.entries()
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited)
+            .filter_map(|e| {
+                let (_, start_time) = client_of(e)?;
+                let (log, facts) = (e.log.clone(), e.facts.clone());
+                Some(Saved { inst: e.inst.clone(), btid: e.btid, start_time, log, offset: e.offset, facts, in_game_at: e.in_game_at })
+            })
+            .collect()
+    }
+
+    /// Writes `saved` to the database when a client started, changed or ended; when only how
+    /// far their logs were read changed, only if `due` (re-reading a few lines after a restart
+    /// gives the same facts).
+    pub fn persist(&self, db: &crate::storage::Db, due: bool) {
+        let now = self.saved();
+        let mut last = self.persisted.lock().unwrap_or_else(|e| e.into_inner());
+        let moved = now.len() != last.len() || now.iter().zip(last.iter()).any(|(a, b)| a.inst != b.inst);
+        if *last == now || !(moved || due) {
+            return;
+        }
+        let rows: Vec<(String, String)> =
+            now.iter()
+                .filter_map(|c| match serde_json::to_string(c) {
+                    Ok(j) => Some((c.inst.id.clone(), j)),
+                    Err(e) => {
+                        log::warn!("tracked instance {} not saved: {:?} error", c.inst.id, e.classify());
+                        None
+                    }
+                })
+                .collect();
+        match db.save_tracked(&rows) {
+            Ok(()) => *last = now,
+            Err(e) => log::warn!("could not save the tracked clients: {e}"),
+        }
+    }
+
+    /// Follows clients from before Altbase restarted again (before the first poll): each one
+    /// `readoptable` among the running Roblox clients `roblox`, its log read on from where it
+    /// was. Returns the (pid, start time) of each one followed again.
+    /// `played`: accounts the window layout leaves alone (full quality), given no slot.
+    pub fn readopt(&self, saved: Vec<Saved>, roblox: &[ProcInfo], played: &[i64]) -> Vec<(u32, u64)> {
+        let mut entries = self.entries();
+        let mut out = Vec::new();
+        for s in saved {
+            if !readoptable(&s, roblox, &entries) {
+                continue;
+            }
+            out.push((s.inst.pid, s.start_time));
+            let mut e = Entry::new(s.inst, s.btid, Some(s.start_time), true);
+            (e.log, e.offset, e.facts, e.in_game_at) = (s.log, s.offset, s.facts, s.in_game_at);
+            // "Minimize on launch" was done with it before.
+            e.window_seen = true;
+            entries.push(e);
+        }
+        // Layout slots in launch order, so new clients go after them, not over them.
+        let mut back: Vec<(i64, i64)> = entries
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited && !played.contains(&e.inst.account_id))
+            .map(|e| (e.inst.started_at, e.inst.account_id))
+            .collect();
+        drop(entries);
+        back.sort_unstable();
+        self.reserve_slots(&back.into_iter().map(|b| b.1).collect::<Vec<_>>(), false);
+        out
+    }
+
+    /// Running ones first, then ended ones (newest first, at most 30 kept).
+    pub fn list(&self) -> Vec<Instance> {
+        let mut v: Vec<Instance> = self.entries().iter().map(|e| e.inst.clone()).collect();
+        // Running ones in launch order.
+        v.sort_by_key(|i| match i.state {
+            InstanceState::Exited => (1, -i.ended_at.unwrap_or(0)),
+            _ => (0, i.started_at),
+        });
+        v
+    }
+
+    pub fn get(&self, id: &str) -> Option<Instance> {
+        self.entries().iter().find(|e| e.inst.id == id).map(|e| e.inst.clone())
+    }
+
+    /// The user asked to close it: its exit is not unexpected (no auto-rejoin, note "Closed").
+    /// Returns the process to close, under the same lock: its pid and the start time it was
+    /// first seen with (None before that). None once it ended or its process is gone, so a
+    /// reused pid is never closed; the next poll ends the entry.
+    pub fn mark_closing(&self, id: &str) -> Option<(u32, Option<u64>)> {
+        self.mark_restart(id, None)
+    }
+
+    /// `mark_closing` for an auto-rejoin or restart of `cause`; a `Mem` one ends as `Mem`.
+    pub fn mark_restart(&self, id: &str, cause: Option<CrashKind>) -> Option<(u32, Option<u64>)> {
+        let mut entries = self.entries();
+        let e = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited)?;
+        e.closing = true;
+        e.mem_restart = cause == Some(CrashKind::Mem);
+        e.scheduled_restart = cause == Some(CrashKind::Scheduled);
+        e.alive.then_some((e.inst.pid, e.start_time))
+    }
+
+    /// Launches still in a bootstrapper's hands, whose client hasn't appeared: for the panic button.
+    pub fn bootstrappers(&self) -> Vec<(u32, Option<u64>)> {
+        self.entries().iter().filter(|e| !e.adopted && e.alive && e.inst.state != InstanceState::Exited).map(|e| (e.inst.pid, e.start_time)).collect()
+    }
+
+    /// Panic button: every entry, ended ones too, counts as closed by the user, so no rejoin or
+    /// restart waiting for its turn goes ahead (`still_wants_rejoin`).
+    pub fn mark_all_closing(&self) {
+        self.entries().iter_mut().for_each(|e| e.closing = true);
+    }
+
+    /// The crash breaker tripped for this client: `note` ("Gave up after ...") stays its note,
+    /// unless the user closes it.
+    pub fn give_up(&self, id: &str, note: String) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
+            if !e.closing {
+                e.inst.note = Some(note.clone());
+            }
+            e.gave_up = Some(note);
+        }
+    }
+
+    /// Clients that ended badly since the last call, oldest first.
+    /// The servers clients reached since the last call: (account id, what to record). A teleport
+    /// counts as a new one; a client followed again after a restart is sorted out by `add_server`.
+    pub fn take_servers(&self) -> Vec<(i64, crate::model::ServerVisit)> {
+        let mut out = Vec::new();
+        for e in self.entries().iter_mut().filter(|e| e.facts.in_game && !e.facts.teleporting) {
+            if let (Some(job), Some(place)) = (&e.facts.job_id, e.facts.place_id)
+                && e.server_seen.as_ref() != Some(job)
+            {
+                // Where a teleport leads may need a code too, and its log doesn't say.
+                let private = e.server_seen.is_some() || matches!(e.inst.target, LaunchTarget::PrivateLink { .. } | LaunchTarget::PrivateAccess { .. });
+                out.push((e.inst.account_id, crate::model::ServerVisit { place_id: place, job_id: job.clone(), private, joined_at: crate::commands::now_ms() }));
+                e.server_seen = Some(job.clone());
+            }
+        }
+        out
+    }
+
+    pub fn take_crashes(&self) -> Vec<Ended> {
+        std::mem::take(&mut *self.crashes.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// A close that didn't land: its exit counts as unexpected again.
+    pub fn clear_closing(&self, id: &str) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
+            e.closing = false;
+            e.mem_restart = false;
+        }
+    }
+
+    /// The account has a client starting, joining or in a game (a disconnected one doesn't
+    /// count: it is waiting to be closed or rejoined).
+    pub fn has_live_client(&self, account_id: i64) -> bool {
+        self.entries().iter().any(|e| {
+            e.inst.account_id == account_id
+                && matches!(e.inst.state, InstanceState::Starting | InstanceState::Joining | InstanceState::InGame)
+        })
+    }
+
+    /// Reserves the account for one launch: None while it has a live client or another launch
+    /// holds it. Hold the claim until the new client is registered.
+    pub fn claim(&self, account_id: i64) -> Option<Claim<'_>> {
+        let mut claimed = self.claimed.lock().unwrap_or_else(|e| e.into_inner());
+        if claimed.contains(&account_id) || self.has_live_client(account_id) {
+            return None;
+        }
+        claimed.push(account_id);
+        Some(Claim { tracker: self, account_id })
+    }
+
+    /// The logs of clients that haven't ended (`logwatch::clean` leaves them).
+    pub fn live_logs(&self) -> Vec<PathBuf> {
+        self.entries().iter().filter(|e| e.inst.state != InstanceState::Exited).filter_map(|e| e.log.clone()).collect()
+    }
+
+    /// True while a client Altbase started hasn't ended.
+    pub fn any_running(&self) -> bool {
+        self.entries().iter().any(|e| e.inst.state != InstanceState::Exited)
+    }
+
+    /// How many auto-rejoins in a row led to the client `id` (shown in the UI).
+    pub fn set_rejoins(&self, id: &str, rejoins: u32) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
+            e.inst.rejoins = rejoins;
+        }
+    }
+
+    /// Sets the client's limits; returns the previous ones and its process (pid, start time)
+    /// once it is known to be the client itself (None while only a bootstrapper is seen).
+    /// None when there is no such running client.
+    pub fn set_limits(&self, id: &str, limits: Limits) -> Option<(Limits, Option<(u32, u64)>)> {
+        let mut entries = self.entries();
+        let e = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited)?;
+        let prev = std::mem::replace(&mut e.inst.limits, limits);
+        Some((prev, client_of(e)))
+    }
+
+    /// Opts a running client in or out of anti-AFK; false when there is no such client.
+    pub fn set_anti_afk(&self, id: &str, on: bool) -> bool {
+        let mut entries = self.entries();
+        let Some(e) = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited) else { return false };
+        e.inst.anti_afk = on;
+        true
+    }
+
+    /// Clients anti-AFK may press keys in: in a game, opted in, not being closed, the client itself
+    /// known. `since`: its last anti-AFK press, else when it reached the game.
+    pub fn afk_clients(&self) -> Vec<super::afk::AfkClient> {
+        self.entries()
+            .iter()
+            .filter(|e| e.inst.state == InstanceState::InGame && e.inst.anti_afk && !e.closing)
+            .filter_map(|e| {
+                let (pid, _) = client_of(e)?;
+                Some(super::afk::AfkClient { id: e.inst.id.clone(), pid, since: e.inst.afk_at.or(e.in_game_at)? })
+            })
+            .collect()
+    }
+
+    fn slots(&self) -> MutexGuard<'_, Vec<i64>> {
+        self.slots.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Layout slots for `accounts`, in their order (`reserve`). `batch`: a batch takes its slots up
+    /// front, so they follow the list, not which client loads first; until `end_batch_slots` its
+    /// accounts count as running, so nothing launched meanwhile takes or trims their slots.
+    pub fn reserve_slots(&self, accounts: &[i64], batch: bool) {
+        let pending = {
+            let mut p = self.slots_pending.lock().unwrap_or_else(|e| e.into_inner());
+            if batch {
+                *p = accounts.to_vec();
+            }
+            p.clone()
+        };
+        let live = self.slot_holders(pending);
+        reserve(&mut self.slots(), accounts, &|a| live.contains(&a));
+    }
+
+    /// Accounts whose slot stays theirs: running ones, ones with a rejoin or restart on its way
+    /// (it keeps the slot for the new client), and `pending` (a batch's, still starting).
+    fn slot_holders(&self, pending: Vec<i64>) -> Vec<i64> {
+        let mut live: Vec<i64> = self
+            .entries()
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited || e.relaunching.is_some())
+            .map(|e| e.inst.account_id)
+            .collect();
+        live.extend(pending);
+        live
+    }
+
+    /// What a batch of `accounts` would make the slots (account id by slot), without changing
+    /// them, and which accounts have a client (not a running batch's still to start): for the layout preview.
+    pub fn preview_slots(&self, accounts: &[i64]) -> (Vec<i64>, Vec<i64>) {
+        let live = self.slot_holders(self.pending_slots());
+        let mut slots = self.slots().clone();
+        reserve(&mut slots, accounts, &|a| live.contains(&a));
+        (slots, self.slot_holders(Vec::new()))
+    }
+
+    /// A running batch's accounts, whose slots are kept while they start.
+    pub fn pending_slots(&self) -> Vec<i64> {
+        self.slots_pending.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The batch is over: its accounts that didn't start give their slots up (trimmed at the end).
+    pub fn end_batch_slots(&self) {
+        self.slots_pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.reserve_slots(&[], false);
+    }
+
+    /// The slots in this order from now on (the Dashboard's Tile laid them out so). `fit`: as the
+    /// Fit grid; else the next Fit arrival lays every window out again.
+    pub fn set_slots(&self, accounts: Vec<i64>, fit: bool) {
+        self.fit_n.store(if fit { accounts.len() } else { 0 }, Ordering::Relaxed);
+        *self.slots() = accounts;
+    }
+
+    /// `account`'s layout slot (reserved now if it has none) and how many slots there are.
+    pub fn slot_of(&self, account: i64) -> (usize, usize) {
+        if !self.slots().contains(&account) {
+            self.reserve_slots(&[account], false);
+        }
+        let s = self.slots();
+        (s.iter().position(|&a| a == account).unwrap_or(s.len()), s.len())
+    }
+
+    /// Running clients already in a game (or disconnected from one: they keep their slot), past their
+    /// launch steps, that hold a layout slot: (instance id, pid, slot, account id). Loading ones get
+    /// placed when they arrive.
+    pub fn slotted(&self) -> Vec<(String, u32, usize, i64)> {
+        let slots = self.slots().clone();
+        self.entries()
+            .iter()
+            .filter(|e| matches!(e.inst.state, InstanceState::InGame | InstanceState::Disconnected) && e.window_seen)
+            .filter_map(|e| Some((e.inst.id.clone(), client_of(e)?.0, slots.iter().position(|&a| a == e.inst.account_id)?, e.inst.account_id)))
+            .collect()
+    }
+
+    /// Marks a running client's window as made small at that client size (or back to normal,
+    /// None); false when there is no such client. The tiny sweep keeps it at that size.
+    pub fn set_micro(&self, id: &str, small: Option<(u32, u32)>) -> bool {
+        let mut entries = self.entries();
+        let Some(e) = entries.iter_mut().find(|e| e.inst.id == id && e.inst.state != InstanceState::Exited) else { return false };
+        (e.inst.micro, e.inst.micro_size) = (small.is_some(), small);
+        true
+    }
+
+    /// Pids of clients that reached a game and whose main window `has_window` sees, for the tiny and
+    /// hide on launch: not while they load, when changing a window waits for a client that is busy
+    /// and may trouble it. Each returned once per instance, also while "Minimize on launch" is off,
+    /// so turning it on later leaves clients already up alone. Windows are looked for outside the lock.
+    pub fn first_in_game(&self, has_window: &dyn Fn(u32) -> bool) -> Vec<u32> {
+        let waiting: Vec<(String, u32)> = self
+            .entries()
+            .iter()
+            .filter(|e| !e.window_seen && e.inst.state == InstanceState::InGame)
+            .filter_map(|e| client_of(e).map(|(pid, _)| (e.inst.id.clone(), pid)))
+            .collect();
+        let seen: Vec<(String, u32)> = waiting.into_iter().filter(|&(_, pid)| has_window(pid)).collect();
+        let mut entries = self.entries();
+        seen.into_iter()
+            .filter(|(id, pid)| {
+                let Some(e) = entries.iter_mut().find(|e| e.inst.id == *id && e.inst.pid == *pid && !e.window_seen) else { return false };
+                e.window_seen = true;
+                true
+            })
+            .map(|(_, pid)| pid)
+            .collect()
+    }
+
+    /// Anti-AFK pressed a key in the client at `at` (unix ms).
+    pub fn mark_afk(&self, id: &str, at: i64) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
+            e.inst.afk_at = Some(at);
+        }
+    }
+
+    /// Running clients by (id, pid, start time, limits), for `Limiter::sync`.
+    pub fn clients(&self) -> Vec<(String, u32, u64, Limits)> {
+        self.entries()
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited)
+            .filter_map(|e| client_of(e).map(|(pid, t0)| (e.inst.id.clone(), pid, t0, e.inst.limits)))
+            .collect()
+    }
+
+    /// The running clients `limits::plan` lifts, besides the one in front: `runs_free` ones and
+    /// those of the `full_quality` accounts.
+    pub fn free(&self, full_quality: &[i64], now: i64) -> Vec<String> {
+        self.entries()
+            .iter()
+            .filter(|e| e.inst.state != InstanceState::Exited && (e.runs_free(now) || full_quality.contains(&e.inst.account_id)))
+            .map(|e| e.inst.id.clone())
+            .collect()
+    }
+
+    /// Still a rejoin case (`wants_rejoin`), checked again after the launch delay: false once
+    /// the user closed it, it reconnected, responds again or was cleared.
+    pub fn still_wants_rejoin(&self, id: &str) -> bool {
+        self.entries().iter().any(|e| e.inst.id == id && !e.closing && e.cause().is_some())
+    }
+
+    /// Still to be relaunched, after a check that took a while: `still_wants_rejoin` (`closed`: Altbase
+    /// closed it for this, so only that it isn't cleared), unless Close all stopped the relaunch or
+    /// the account was launched since it began.
+    pub fn relaunch_wanted(&self, id: &str, closed: bool) -> bool {
+        let entries = self.entries();
+        let Some(me) = entries.iter().find(|e| e.inst.id == id) else { return false };
+        let Some(began) = me.relaunching else { return false };
+        (closed || (!me.closing && me.cause().is_some()))
+            && !entries.iter().any(|e| e.inst.id != id && e.inst.account_id == me.inst.account_id && e.inst.started_at > began)
+    }
+
+    /// A relaunch of this client starts (`now`: Unix ms); false if one is at work already.
+    pub fn begin_relaunch(&self, id: &str, now: i64) -> bool {
+        self.entries().iter_mut().find(|e| e.inst.id == id).is_some_and(|e| {
+            e.inst.relaunching = true;
+            e.relaunching.replace(e.relaunching.unwrap_or(now)).is_none()
+        })
+    }
+
+    /// Why this client's relaunch has to wait (None: it no longer does); the UI shows it.
+    pub fn set_relaunch_problem(&self, id: &str, why: Option<String>) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id && e.relaunching.is_some()) {
+            e.inst.relaunch_problem = why;
+        }
+    }
+
+    /// Not stopped by Close all or a clear (it is over when its task ends).
+    pub fn is_relaunching(&self, id: &str) -> bool {
+        self.entries().iter().any(|e| e.inst.id == id && e.relaunching.is_some())
+    }
+
+    pub fn end_relaunch(&self, id: &str) {
+        if let Some(e) = self.entries().iter_mut().find(|e| e.inst.id == id) {
+            e.stop_relaunch();
+        }
+    }
+
+    /// What is wrong with the client now, if it is still a rejoin case.
+    pub fn cause_of(&self, id: &str) -> Option<CrashKind> {
+        self.entries().iter().find(|e| e.inst.id == id).and_then(Entry::cause)
+    }
+
+    /// Close all: no relaunch still waiting goes ahead, and an ended client handed out but not yet
+    /// picked up counts as closed by the user.
+    pub fn cancel_relaunches(&self) {
+        for e in self.entries().iter_mut() {
+            e.stop_relaunch();
+            e.closing |= e.inst.state == InstanceState::Exited;
+        }
+    }
+
+    /// Clients still open that are only waiting to be closed and relaunched.
+    pub fn relaunches_open(&self) -> usize {
+        self.entries().iter().filter(|e| e.relaunching.is_some() && !e.closing && e.inst.state != InstanceState::Exited && e.cause().is_some()).count()
+    }
+
+    /// Clients that got disconnected, crashed or hung since the last call and may be relaunched
+    /// (`wants_rejoin`), each returned once per trouble (again after it got back into a game or
+    /// responds again). Drained whether or not auto-rejoin or auto-restart is on, so turning
+    /// one on later doesn't relaunch old troubles.
+    pub fn take_rejoins(&self) -> Vec<Rejoin> {
+        let mut out = Vec::new();
+        for e in self.entries().iter_mut() {
+            let trouble = e.hung() || e.mem_high() || e.schedule_due || matches!(e.inst.state, InstanceState::Disconnected | InstanceState::Exited);
+            if !trouble {
+                // Reconnected, teleported or responding again: later trouble counts again, and
+                // an earlier "Gave up" no longer says anything about it.
+                e.rejoin_seen = false;
+                e.gave_up = None;
+                e.inst.relaunch_problem = None;
+            } else if !e.rejoin_seen {
+                e.rejoin_seen = true;
+                if let Some(cause) = e.cause() {
+                    let i = &e.inst;
+                    // Kicked for idling: says whether anti-AFK's presses counted in this game.
+                    if e.facts.reason.as_deref().is_some_and(|r| r.ends_with(" 278")) {
+                        let last = i.afk_at.map_or_else(|| "never".into(), |t| format!("{} min ago", (crate::commands::now_ms() - t) / 60_000));
+                        log::warn!("instance {} kicked for idling (278); anti-AFK on for it: {}, its last press: {last}", i.id, i.anti_afk);
+                    }
+                    out.push(Rejoin {
+                        from: i.id.clone(),
+                        account_id: i.account_id,
+                        target: i.target.clone(),
+                        rejoins: i.rejoins + 1,
+                        cause,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// What `limits` really applied to each client (`Limiter::in_force`); whether any changed.
+    pub fn set_in_force(&self, in_force: &[(String, Limits)]) -> bool {
+        let mut changed = false;
+        for e in self.entries().iter_mut() {
+            let now = in_force.iter().find(|(id, _)| *id == e.inst.id).map_or_else(Limits::default, |(_, l)| *l);
+            changed |= now != e.inst.applied_limits;
+            e.inst.applied_limits = now;
+        }
+        changed
+    }
+
+    /// One memory sample of every running client (`private_mb` reads it, MB), counted against
+    /// `limit_mb` (`metrics::mem_strikes`; 0: off) unless `count` is off: then it is only remembered,
+    /// for the throttle, and the strikes stay. A client over it for `MEM_STRIKES` samples in a row
+    /// is handed out by `take_rejoins` as `Mem`.
+    pub fn check_memory(&self, limit_mb: u32, count: bool, private_mb: &dyn Fn(u32, u64) -> Option<u64>) {
+        let read: Vec<(String, u32, u64)> = self
+            .clients()
+            .into_iter()
+            .filter_map(|(id, pid, t0, _)| Some((id, pid, private_mb(pid, t0)?)))
+            .collect();
+        // One being closed keeps its count (and the memory it is recorded with).
+        for e in self.entries().iter_mut().filter(|e| !e.closing) {
+            match read.iter().find(|(id, pid, _)| *id == e.inst.id && *pid == e.inst.pid) {
+                Some(&(_, _, mb)) => {
+                    if count {
+                        e.mem_strikes = mem_strikes(e.mem_strikes, mb, limit_mb);
+                    }
+                    e.mem_mb = mb;
+                }
+                None if count && e.inst.state != InstanceState::Exited => e.mem_strikes = 0,
+                None => {}
+            }
+        }
+    }
+
+    /// Marks each client in a game for `every_hours` (0: off) as due for its scheduled rejoin
+    /// (`take_rejoins` hands it out as `Scheduled`). Counted from when it reached the game, so a
+    /// rejoined client starts its own count.
+    pub fn check_schedule(&self, every_hours: u32, now: i64) {
+        let every = i64::from(every_hours) * 3_600_000;
+        for e in self.entries().iter_mut().filter(|e| !e.closing) {
+            e.schedule_due = every > 0
+                && e.inst.state == InstanceState::InGame
+                && e.in_game_at.is_some_and(|t| now - t >= every);
+        }
+    }
+
+    /// Brings each running client's `throttled` to its last memory sample against `limit_mb`
+    /// (`metrics::mem_throttled`; 0: off). The ids held, and whether any changed.
+    pub fn throttle(&self, limit_mb: u32) -> (Vec<String>, bool) {
+        let (mut held, mut changed) = (Vec::new(), false);
+        for e in self.entries().iter_mut().filter(|e| e.inst.state != InstanceState::Exited) {
+            let t = mem_throttled(e.inst.throttled, e.mem_mb, limit_mb);
+            changed |= t != e.inst.throttled;
+            e.inst.throttled = t;
+            if t {
+                held.push(e.inst.id.clone());
+            }
+        }
+        (held, changed)
+    }
+
+    /// Forgets ended entries.
+    pub fn clear_ended(&self) {
+        self.entries().retain(|e| e.inst.state != InstanceState::Exited);
+    }
+
+    /// Runs for the app's lifetime (started in setup). Once a second: process liveness by
+    /// (pid, start time); binds each entry to its log (`logwatch::find_log` by browser tracker
+    /// id) and reads new lines; maps facts to states (Joining / InGame / Disconnected; note
+    /// "Signed in as another account" when the log's userid differs from the account's,
+    /// "Roblox wants a human check", "Replaced by another Roblox client"); when a process ends
+    /// before reaching the game within 120 s, looks for a new client whose log names the same
+    /// browser tracker id (Roblox's updater relaunches with a new PID) and rebinds to it;
+    /// otherwise marks it Exited (note "Closed" if mark_closing was called, else "Closed
+    /// unexpectedly"). A client whose window doesn't respond for 30 polls is hung (note "Not
+    /// responding"). Clients that ended badly go to the crash history. Emits
+    /// `instances://changed` whenever an entry changes. The bootstrapper case
+    /// (`via_bootstrapper`): the started PID is the bootstrapper; bind to the client by log.
+    /// Each poll also brings the clients to their limits (`limits::plan`: the adaptive manager
+    /// by the window in front, fair cap, default trim, auto-spread), and every 10 s samples their memory
+    /// for the memory restart (not while a launch or batch runs). With `clean_logs`, Roblox's old
+    /// logs go hourly (`logwatch::clean`).
+    pub fn spawn(app: AppHandle) {
+        restore(&app);
+        super::resize::start();
+        // Not on this thread: changing a window waits for its client.
+        std::thread::spawn(super::window::recover);
+        tauri::async_runtime::spawn(async move {
+            let mut tick: u64 = 0;
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                tick += 1;
+                let handle = app.clone();
+                let (moved, rejoins, throttle_moved) = tauri::async_runtime::spawn_blocking(move || {
+                    let s = handle.state::<crate::App>();
+                    // Polled every second: a settings error is said once, until it reads again.
+                    static SETTINGS_BAD: AtomicBool = AtomicBool::new(false);
+                    let v = match s.db.settings() {
+                        Ok(v) => {
+                            SETTINGS_BAD.store(false, Ordering::Relaxed);
+                            v
+                        }
+                        Err(e) => {
+                            if !SETTINGS_BAD.swap(true, Ordering::Relaxed) {
+                                log::warn!("tracker: could not read settings, using defaults: {e}");
+                            }
+                            crate::model::Settings::default()
+                        }
+                    };
+                    let user_of = |account_id| {
+                        s.db.account(account_id)
+                            .inspect_err(|e| {
+                                if !matches!(e, crate::error::AppError::NotFound) {
+                                    // Polled every second: debug, not warn.
+                                    log::debug!("tracker: could not read account {account_id}, wrong-account check off: {e}");
+                                }
+                            })
+                            .ok()
+                            .map(|a| a.user_id)
+                    };
+                    let dir = logwatch::logs_dir();
+                    if dir.is_none() {
+                        static ONCE: std::sync::Once = std::sync::Once::new();
+                        ONCE.call_once(|| log::warn!("LOCALAPPDATA not set: Roblox client logs can't be followed"));
+                    }
+                    let moved = s.tracker.poll(dir.as_deref(), &Live, &user_of, crate::commands::now_ms());
+                    // The shared login files are held only while Altbase's clients run (or launch).
+                    s.multi.release_if(|| !s.tracker.any_running());
+                    // Also gives a client re-adopted under a new pid its limits again.
+                    let clients = s.tracker.clients();
+                    super::resize::set_clients(clients.iter().map(|c| c.1).collect());
+                    let (held, throttle_moved) = s.tracker.throttle(v.mem_throttle.mb);
+                    if !clients.is_empty() {
+                        s.limiter.sync(&super::limits::plan_now(&s, &v, &clients, &held));
+                    }
+                    let throttle_moved = s.tracker.set_in_force(&s.limiter.in_force()) || throttle_moved;
+                    // Once per client, without taking the focus.
+                    for pid in s.tracker.first_in_game(&|pid| process::main_window(pid).is_some()) {
+                        let id = clients.iter().find(|c| c.1 == pid).map(|c| c.0.clone());
+                        let inst = id.as_deref().and_then(|id| s.tracker.get(id));
+                        let full_quality = inst.as_ref().and_then(|i| s.db.account(i.account_id).ok()).is_some_and(|a| a.full_quality);
+                        let size = (v.micro_width, v.micro_height);
+                        // In the window layout: this client's slot, and every other one's again when a Fit
+                        // grid changed size. The accounts the user plays keep their window, as with tiny and minimize.
+                        let (places, round) = match (full_quality, id.as_deref(), inst.as_ref()) {
+                            (false, Some(id), Some(inst)) => plan_layout(&handle, &s, &v, Some((id, pid, inst.account_id))),
+                            _ => (Vec::new(), 0),
+                        };
+                        let layout_app = handle.clone();
+                        // A layout replaces "Tiny on launch" (also for a minimized arrival it leaves alone),
+                        // and a minimized client stays so either way.
+                        let in_layout = !full_quality && v.window_layout != WindowLayout::Off;
+                        let visible = matches!(process::main_window(pid), Some((_, false)));
+                        let tiny = id.filter(|id| !in_layout && visible && v.tiny_on_launch && !full_quality && s.tracker.set_micro(id, Some(size)));
+                        let minimize = v.minimize_on_launch && !full_quality;
+                        // The accounts the user plays keep their sound, as they keep their window.
+                        let mute = v.mute_on_launch && !full_quality;
+                        log::info!("client {pid}: in a game; placing {} window(s), making it tiny: {}, minimizing it: {minimize}, muting it: {mute}", places.len(), tiny.is_some());
+                        // Not on this thread: a busy client's ShowWindow would stop every poll.
+                        tauri::async_runtime::spawn_blocking(move || {
+                            // This client's own place always runs: its minimize follows.
+                            do_places(&layout_app, places, 1, round);
+                            if let Some(id) = tiny
+                                && let Err(e) = super::window::micro(&id, pid, true, size)
+                            {
+                                log::debug!("instance {id}: not made tiny at launch: {e}");
+                            }
+                            if minimize {
+                                super::window::hide_on_launch(pid);
+                            }
+                            // Last: it may wait seconds for the client's audio. Always set, unmuted when
+                            // the setting is off or the client is full quality: Windows can carry one
+                            // client's mute over to the next one.
+                            if !super::audio::set_mute(pid, mute) {
+                                log::info!("client {pid}: no audio session found to set muted: {mute}");
+                            }
+                        });
+                    }
+                    // Tiny clients stay at their size. One round at a time, off this thread.
+                    static SWEEPING: AtomicBool = AtomicBool::new(false);
+                    if !clients.is_empty() && !SWEEPING.swap(true, Ordering::Relaxed) {
+                        let size = (v.micro_width, v.micro_height);
+                        // Each at the size it was made small at (a layout cell can differ from Settings').
+                        let list: Vec<_> = clients.iter().map(|c| (c.1, s.tracker.get(&c.0).filter(|i| i.micro).map(|i| i.micro_size.unwrap_or(size)))).collect();
+                        tauri::async_runtime::spawn_blocking(move || {
+                            super::window::sweep(&list);
+                            SWEEPING.store(false, Ordering::Relaxed);
+                        });
+                    }
+                    // Restarts wait (not reset) while a launch, batch or rejoin runs; the throttle doesn't.
+                    if tick.is_multiple_of(10) && !clients.is_empty() {
+                        let mb = |pid, t0| super::metrics::read(pid, t0).map(|r| r.private >> 20);
+                        s.tracker.check_memory(v.mem_restart_mb, !s.bulk.any_busy(), &mb);
+                    }
+                    // Scheduled rejoins wait, like restarts, while a launch or batch runs.
+                    if tick.is_multiple_of(10) && !s.bulk.any_busy() {
+                        s.tracker.check_schedule(v.rejoin_every_hours, crate::commands::now_ms());
+                    }
+                    // Roblox's own logs: 30 s after start, then hourly.
+                    if v.clean_logs
+                        && tick % 3600 == 30
+                        && let Some(dir) = logwatch::logs_dir()
+                    {
+                        let done = logwatch::clean(&dir, &s.tracker.live_logs());
+                        log::info!("cleaned {} Roblox logs ({} MB)", done.files, done.bytes >> 20);
+                    }
+                    for (account, visit) in s.tracker.take_servers() {
+                        if let Err(e) = s.db.add_server(account, &visit) {
+                            log::warn!("could not record a server of account {account}: {e}");
+                        }
+                    }
+                    for c in s.tracker.take_crashes() {
+                        log::warn!(
+                            "instance {} of account {} ended: {:?}, given up on after {} s (gone after {:?} ms), place {:?}, reason {:?}",
+                            c.instance_id,
+                            c.account_id,
+                            c.kind,
+                            c.uptime_ms / 1000,
+                            c.died_after_ms,
+                            c.place_id,
+                            c.reason
+                        );
+                        let row = crate::storage::NewCrash {
+                            instance_id: &c.instance_id,
+                            account_id: c.account_id,
+                            kind: c.kind,
+                            at: c.at,
+                            uptime_ms: c.uptime_ms,
+                            reason: c.reason.as_deref(),
+                            place_id: c.place_id,
+                            log_path: c.log.as_ref().and_then(|p| p.to_str()),
+                        };
+                        if let Err(e) = s.db.add_crash(&row) {
+                            log::warn!("could not record the end of instance {}: {e}", c.instance_id);
+                        }
+                        // Altbase closed that one itself, for its memory.
+                        if !matches!(c.kind, CrashKind::Mem | CrashKind::Scheduled) {
+                            std::thread::spawn(move || super::autopsy::report(&c));
+                        }
+                    }
+                    s.tracker.persist(&s.db, tick.is_multiple_of(10));
+                    (moved, s.tracker.take_rejoins(), throttle_moved)
+                })
+                .await
+                .unwrap_or_else(|e| {
+                    log::error!("tracker poll failed: {e}");
+                    Default::default()
+                });
+                for t in &moved {
+                    let (b, a) = (&t.before, &t.after);
+                    if b.state != a.state || b.note != a.note {
+                        // Ordinary progress (and the user's own close) at info; problems at warn.
+                        let problem = a.state == InstanceState::Disconnected || a.note.as_ref().is_some_and(|n| *n != closed());
+                        let level = if problem { log::Level::Warn } else { log::Level::Info };
+                        let note = a.note.as_deref().unwrap_or("");
+                        log::log!(level, "instance {} of account {}: {:?} -> {:?} {note}", a.id, a.account_id, b.state, a.state);
+                        // Launches from any path slow down for this, until one gets through.
+                        let bulk = &app.state::<crate::App>().bulk;
+                        if a.note != b.note && a.note.as_ref().is_some_and(|n| *n == auth_failed()) {
+                            bulk.refused();
+                        } else if a.state == InstanceState::InGame && b.state != InstanceState::InGame {
+                            bulk.got_through();
+                        }
+                    }
+                }
+                if !moved.is_empty() || throttle_moved {
+                    crate::commands::instances_changed(&app);
+                    crate::discord::transitions(&app, &moved);
+                }
+                super::rejoin::handle(&app, rejoins);
+            }
+        });
+    }
+
+    /// One round over the running entries; what the UI sees of each one that changed (none:
+    /// nothing changed). The files and processes are looked at on copies, outside the lock.
+    fn poll(&self, dir: Option<&Path>, procs: &dyn Procs, user_of: &dyn Fn(i64) -> Option<i64>, now: i64) -> Vec<Transition> {
+        let mut work: Vec<Entry> = self.entries().iter().filter(|e| e.inst.state != InstanceState::Exited).cloned().collect();
+        if work.is_empty() {
+            return Vec::new();
+        }
+        let mut taken: Vec<u32> = work.iter().filter(|e| e.adopted).map(|e| e.inst.pid).collect();
+        let mut roblox = None;
+        for e in &mut work {
+            if !e.user_checked {
+                e.expected_user = user_of(e.inst.account_id);
+                e.user_checked = true;
+            }
+            observe(e, dir, procs, &mut roblox, &mut taken, now);
+        }
+        let mut entries = self.entries();
+        let mut moved = Vec::new();
+        for w in work {
+            // Only this loop ends entries, so a running one is still there.
+            let Some(e) = entries.iter_mut().find(|e| e.inst.id == w.inst.id) else { continue };
+            // A close that reached only the bootstrapper doesn't cover the client it started.
+            let closing = e.closing && (e.adopted || !w.adopted);
+            let old = std::mem::replace(e, w);
+            e.closing = closing;
+            // set_rejoins / set_limits / give_up / set_anti_afk / mark_afk may have run since the
+            // copy was taken.
+            e.inst.rejoins = old.inst.rejoins;
+            (e.inst.limits, e.inst.applied_limits) = (old.inst.limits, old.inst.applied_limits);
+            (e.inst.anti_afk, e.inst.afk_at) = (old.inst.anti_afk, old.inst.afk_at);
+            (e.inst.throttled, e.inst.micro, e.inst.micro_size, e.window_seen) = (old.inst.throttled, old.inst.micro, old.inst.micro_size, old.window_seen);
+            (e.gave_up, e.relaunching) = (old.gave_up, old.relaunching);
+            (e.inst.relaunching, e.inst.relaunch_problem) = (old.inst.relaunching, old.inst.relaunch_problem.clone());
+            let had_game = old.in_game_at.is_some();
+            (e.mem_strikes, e.mem_mb, e.mem_restart) = (old.mem_strikes, old.mem_mb, old.mem_restart);
+            (e.schedule_due, e.scheduled_restart) = (old.schedule_due, old.scheduled_restart);
+            if let Some(kind) = settle(e, now) {
+                self.crashes.lock().unwrap_or_else(|e| e.into_inner()).push(ended(e, kind, now));
+            }
+            if e.inst != old.inst {
+                moved.push(Transition { before: old.inst, after: e.inst.clone(), first_game: !had_game && e.in_game_at.is_some() });
+            }
+        }
+        prune(&mut entries);
+        moved
+    }
+}
+
+/// Follows the clients saved before Altbase closed again (`readopt`), as its own (not multi-
+/// instance survivors); the saved ones no longer running go from the database.
+fn restore(app: &AppHandle) {
+    let s = app.state::<crate::App>();
+    let saved: Vec<Saved> = match s.db.tracked() {
+        Ok(rows) => rows
+            .iter()
+            .filter_map(|j| {
+                serde_json::from_str(j)
+                    .inspect_err(|e| {
+                        log::warn!("a saved tracked client was dropped: {:?} error at {}:{}", e.classify(), e.line(), e.column())
+                    })
+                    .ok()
+            })
+            .collect(),
+        Err(e) => return log::warn!("could not read the tracked clients: {e}"),
+    };
+    if saved.is_empty() {
+        return;
+    }
+    // What the database holds, so `persist` drops the ones not followed again.
+    *s.tracker.persisted.lock().unwrap_or_else(|e| e.into_inner()) = saved.clone();
+    let total = saved.len();
+    let roblox = with_unreadable(&saved, process::roblox_processes(), process::unreadable_client);
+    let found = s.tracker.readopt(saved, &roblox, &s.db.full_quality_accounts().unwrap_or_default());
+    for &(pid, t0) in &found {
+        super::limits::reset_followed(pid, t0);
+    }
+    s.multi.adopt(&found);
+    log::info!("following {} client(s) from before Altbase restarted", found.len());
+    if total > found.len() {
+        log::debug!("{} saved client(s) no longer running, dropped", total - found.len());
+    }
+    s.tracker.persist(&s.db, true);
+}
+
+/// `roblox`, plus the saved clients Windows won't let be read but that run on (`is_unreadable`,
+/// `process::unreadable_client`), taken at their saved start time. Reading is the only way to check
+/// that, so another Roblox client that took the pid can't be told apart.
+fn with_unreadable(saved: &[Saved], mut roblox: Vec<ProcInfo>, is_unreadable: impl Fn(u32) -> bool) -> Vec<ProcInfo> {
+    for s in saved {
+        if !roblox.iter().any(|p| p.pid == s.inst.pid) && is_unreadable(s.inst.pid) {
+            log::warn!("instance {}: process {} can't be read but is still running: following it again", s.inst.id, s.inst.pid);
+            roblox.push(ProcInfo { pid: s.inst.pid, start_time: s.start_time });
+        }
+    }
+    roblox
+}
+
+/// A saved client to follow again (pure): its pid still runs as a Roblox client started at the
+/// same time, and no entry follows that instance or that process already.
+fn readoptable(s: &Saved, roblox: &[ProcInfo], entries: &[Entry]) -> bool {
+    roblox.iter().any(|p| p.pid == s.inst.pid && p.start_time == s.start_time)
+        && !entries.iter().any(|e| e.inst.id == s.inst.id || (e.inst.pid == s.inst.pid && e.inst.state != InstanceState::Exited))
+}
+
+/// One client's change in a poll: what the UI saw before and sees now.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Transition {
+    pub before: Instance,
+    pub after: Instance,
+    /// It reached a game for the first time in this poll.
+    pub first_game: bool,
+}
+
+fn client_of(e: &Entry) -> Option<(u32, u64)> {
+    (e.adopted && e.alive).then_some((e.inst.pid, e.start_time?)).filter(|&(_, t0)| t0 != 0)
+}
+
+/// A client to launch again: same account, same target.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rejoin {
+    /// The instance that ended (or is to be closed).
+    pub from: String,
+    pub account_id: i64,
+    pub target: LaunchTarget,
+    /// For the new client: the ended one's `rejoins` + 1.
+    pub rejoins: u32,
+    /// Disconnect: an auto-rejoin; crash or hang: an auto-restart.
+    pub cause: CrashKind,
+}
+
+/// Why a client is worth launching again, if it is (pure; the settings and the crash breaker
+/// decide later whether it happens):
+/// - `Disconnect`: Roblox disconnected it (kicked, server shut down, connection lost) and it
+///   still shows the disconnect dialog (no problem note) or then closed by itself;
+/// - `Crash`: it ended by itself ("Closed unexpectedly") with no disconnect in its log. Closing
+///   Roblox's window by hand leaves no trace in its log, so that looks the same;
+/// - `Hang`: its window has not responded for `HANG_POLLS` polls (no other problem note).
+///
+/// Never when the player left (reason 285 / 273) or another client replaced it.
+pub fn wants_rejoin(inst: &Instance, facts: &LogFacts, hung: bool) -> Option<CrashKind> {
+    if facts.left || facts.replaced {
+        return None;
+    }
+    match inst.state {
+        InstanceState::Exited if inst.note.as_deref() == Some(&*unexpected()) => {
+            Some(if facts.disconnected { CrashKind::Disconnect } else { CrashKind::Crash })
+        }
+        InstanceState::Exited => None,
+        _ if hung => inst.note.as_deref().is_none_or(|n| n == self::hung()).then_some(CrashKind::Hang),
+        InstanceState::Disconnected if inst.note.is_none() => Some(CrashKind::Disconnect),
+        _ => None,
+    }
+}
+
+/// How a client that just ended ended, when badly: hung, disconnected by Roblox, or gone by
+/// itself (`note` as `state_of` gave it). None for a close by the user, a replacement, a wrong
+/// account or a human check (pure).
+fn crash_kind(facts: &LogFacts, hung: bool, note: Option<&str>) -> Option<CrashKind> {
+    if hung {
+        Some(CrashKind::Hang)
+    } else if facts.disconnected && !facts.left {
+        Some(CrashKind::Disconnect)
+    } else if note == Some(&*unexpected()) && !facts.left {
+        Some(CrashKind::Crash)
+    } else {
+        None
+    }
+}
+
+fn ended(e: &Entry, kind: CrashKind, now: i64) -> Ended {
+    Ended {
+        instance_id: e.inst.id.clone(),
+        account_id: e.inst.account_id,
+        kind,
+        at: now,
+        uptime_ms: (now - e.inst.started_at).max(0),
+        reason: match kind {
+            CrashKind::Hang => Some(hung()),
+            CrashKind::Mem => Some(tr!("Commit size reached {mb} MB", mb = e.mem_mb)),
+            CrashKind::Scheduled => Some(tr!("Rejoined on schedule")),
+            _ => e.facts.reason.clone(),
+        },
+        place_id: e.inst.place_id,
+        log: e.log.clone(),
+        pid: e.inst.pid,
+        started_at: e.inst.started_at,
+        died_after_ms: e.died_at.map(|d| (d - e.inst.started_at).max(0)),
+        clues: format!(
+            "pid {}, reached a game: {}, tiny and hide done: {}, hung polls {}, followed directly: {}, last job known: {}, disconnected: {}, left: {}, human check: {}, refused sign-in: {}, replaced: {}, teleporting: {}, closing: {}, relaunches: {}",
+            e.inst.pid,
+            e.in_game_at.is_some(),
+            e.window_seen,
+            e.hung_polls,
+            e.adopted,
+            e.facts.job_id.is_some(),
+            e.facts.disconnected,
+            e.facts.left,
+            e.facts.challenged,
+            e.facts.auth_failed,
+            e.facts.replaced,
+            e.facts.teleporting,
+            e.closing,
+            e.inst.rejoins,
+        ),
+    }
+}
+
+impl Default for Tracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The process queries a poll makes (a fixed list in tests).
+trait Procs {
+    fn start_time(&self, pid: u32) -> Option<u64>;
+    fn roblox(&self) -> Vec<ProcInfo>;
+    fn hung(&self, pid: u32) -> bool;
+    /// `start_time` said None, but this client hasn't exited.
+    fn unreadable_client(&self, pid: u32) -> bool;
+}
+
+struct Live;
+
+impl Procs for Live {
+    fn start_time(&self, pid: u32) -> Option<u64> {
+        process::start_time(pid)
+    }
+
+    fn roblox(&self) -> Vec<ProcInfo> {
+        process::roblox_processes()
+    }
+
+    fn hung(&self, pid: u32) -> bool {
+        process::hung(pid)
+    }
+
+    fn unreadable_client(&self, pid: u32) -> bool {
+        process::unreadable_client(pid)
+    }
+}
+
+/// The blocking part of a poll for one entry: liveness, rebinding, log binding and reading.
+/// `roblox` lists the Roblox processes at most once per poll; `taken` holds the PIDs entries follow.
+fn observe(e: &mut Entry, dir: Option<&Path>, procs: &dyn Procs, roblox: &mut Option<Vec<ProcInfo>>, taken: &mut Vec<u32>, now: i64) {
+    let seen = procs.start_time(e.inst.pid);
+    // 0: unread so far. The first good read is its identity, else a client read late never matches.
+    if e.start_time == Some(0) {
+        e.start_time = seen;
+    }
+    let first = *e.start_time.get_or_insert(seen.unwrap_or(0));
+    // None isn't always gone: Windows can refuse the read of a client that runs on. Exited entries
+    // are never looked at again, so this one call has to be right.
+    let unreadable = seen.is_none() && procs.unreadable_client(e.inst.pid);
+    e.alive = seen == Some(first) || unreadable;
+    if unreadable && !e.unreadable_said {
+        e.unreadable_said = true;
+        log::warn!("instance {}: process {} can't be read but is still running: following it", e.inst.id, e.inst.pid);
+    }
+    if e.alive {
+        e.died_at = None;
+        e.stranger_seen = false;
+    } else {
+        e.died_at.get_or_insert(now);
+        let pid = e.inst.pid;
+        e.stranger_seen = roblox.get_or_insert_with(|| procs.roblox()).iter().any(|p| p.pid != pid && !taken.contains(&p.pid));
+    }
+    if !e.adopted && !e.alive {
+        e.gone_at.get_or_insert(now);
+    }
+    // ponytail: one window enumeration per client per poll; batch them if clients number hundreds.
+    // Kept once it is gone, so a hung client Altbase then closed still ends as hung.
+    if e.alive && e.adopted {
+        e.hung_polls = if procs.hung(e.inst.pid) { e.hung_polls.saturating_add(1) } else { 0 };
+    }
+    let Some(dir) = dir else { return };
+    // Read back from the database: a value too large must not panic.
+    let launched = UNIX_EPOCH.checked_add(Duration::from_millis(e.inst.started_at.max(0) as u64)).unwrap_or(UNIX_EPOCH);
+    // A client starts after the launch (whole seconds: one of slack) and after the process it
+    // replaces or that started it.
+    let after = first.max(u64::try_from(e.inst.started_at / 1000 - 1).unwrap_or(0));
+
+    // Roblox's updater relaunched it: a log created after the dead client's own (which is
+    // created within seconds of its start) names the same tracker id. Judged by creation time,
+    // not by the bound path: the dead client may have died before its log was bound, or the
+    // relaunch's log may have been bound to the dead PID.
+    if !e.alive
+        && e.adopted
+        && may_appear(e, now)
+        && let Some(path) = logwatch::find_log(dir, e.btid, launched)
+        && let Some(created) = created_secs(&path).filter(|&c| c > after + LOG_SKEW_SECS)
+        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), Some(created), after, taken)
+    {
+        log::info!("instance {}: rebound from process {} to {} (updater relaunch)", e.inst.id, e.inst.pid, p.pid);
+        adopt(e, p, taken);
+        if e.log.as_ref() != Some(&path) {
+            e.log = Some(path);
+            e.offset = 0;
+            e.facts = LogFacts::default();
+        }
+    }
+    if e.log.is_none() {
+        e.log = logwatch::find_log(dir, e.btid, launched);
+    }
+    // Behind a bootstrapper: the client is the one that wrote the log.
+    if !e.adopted
+        && let Some(path) = &e.log
+        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), created_secs(path), after, taken)
+    {
+        log::debug!("instance {}: adopted client process {} behind bootstrapper {}", e.inst.id, p.pid, e.inst.pid);
+        adopt(e, p, taken);
+    }
+    if let Some(path) = &e.log {
+        let (account, id) = (e.inst.account_id, &e.inst.id);
+        let on_problem = |p: &str, n: usize| {
+            let times = if n > 1 { format!(" (x{n})") } else { String::new() };
+            // Read every second and the client repeats its problems: info, not warn.
+            log::info!(target: "roblox", "account {account} instance {id}: {p}{times}");
+        };
+        match logwatch::read_new(path, e.offset, &mut e.facts, on_problem) {
+            Ok(offset) => {
+                if offset > e.offset && e.died_at.is_some_and(|d| now - d >= WRITER_AFTER_MS) {
+                    if e.writer_at.is_none() {
+                        log::warn!("instance {}: process {} is gone but its log still grows: a client is running", e.inst.id, e.inst.pid);
+                    }
+                    e.writer_at = Some(now);
+                }
+                e.offset = offset;
+            }
+            Err(err) if e.log_warned => log::debug!("instance {}: client log not readable: {err}", e.inst.id),
+            Err(err) => {
+                e.log_warned = true;
+                log::warn!("instance {}: client log not readable: {err}", e.inst.id);
+            }
+        }
+    }
+    // Who writes that log, if it can be told.
+    if e.writer_at.is_some()
+        && let Some(p) = pick_client(roblox.get_or_insert_with(|| procs.roblox()), e.log.as_deref().and_then(created_secs), after, taken)
+    {
+        log::info!("instance {}: rebound from process {} to {} (it writes its log)", e.inst.id, e.inst.pid, p.pid);
+        adopt(e, p, taken);
+    }
+}
+
+fn adopt(e: &mut Entry, p: ProcInfo, taken: &mut Vec<u32>) {
+    e.inst.pid = p.pid;
+    e.start_time = Some(p.start_time);
+    e.adopted = true;
+    e.alive = true;
+    e.died_at = None;
+    e.writer_at = None;
+    // Its load starts now, not with the bootstrapper or the client it replaces.
+    e.loading_since = None;
+    taken.push(p.pid);
+}
+
+/// The client that wrote a log: started within a few seconds of the log's creation and since
+/// `after`. PIDs already followed are skipped. Nothing else counts: a client the user started
+/// themselves must never be taken for Altbase's.
+fn pick_client(procs: &[ProcInfo], log_created: Option<u64>, after: u64, taken: &[u32]) -> Option<ProcInfo> {
+    let c = log_created?;
+    procs.iter().filter(|p| p.start_time >= after && !taken.contains(&p.pid) && p.start_time.abs_diff(c) <= LOG_SKEW_SECS).min_by_key(|p| p.start_time.abs_diff(c)).cloned()
+}
+
+fn created_secs(path: &Path) -> Option<u64> {
+    let created = std::fs::metadata(path)
+        .and_then(|m| m.created())
+        .inspect_err(|e| log::debug!("log creation time unreadable: {e}"))
+        .ok()?;
+    Some(created.duration_since(UNIX_EPOCH).ok()?.as_secs())
+}
+
+/// Too early to call a vanished client gone: it never reached a game, was not replaced, was
+/// launched under 120 s ago, and wasn't closed (a close that reached only a bootstrapper gets
+/// 5 s for the client it may already have started to show up).
+fn may_appear(e: &Entry, now: i64) -> bool {
+    let closed = e.closing && (e.adopted || e.gone_at.is_some_and(|g| now - g >= BOOTSTRAPPER_GRACE_MS));
+    e.in_game_at.is_none() && !closed && !e.facts.replaced && now - e.inst.started_at < REBIND_MS
+}
+
+const BOOTSTRAPPER_GRACE_MS: i64 = 5_000;
+
+/// Recomputes what the UI sees (under the lock, with the current closing flag). Returns how
+/// the client ended when this ended it badly (`crash_kind`).
+fn settle(e: &mut Entry, now: i64) -> Option<CrashKind> {
+    if e.facts.in_game && e.in_game_at.is_none() {
+        e.in_game_at = Some(now);
+    }
+    if !e.facts.teleporting {
+        e.teleport_at = None;
+    } else if now - *e.teleport_at.get_or_insert(now) >= TELEPORT_MS {
+        log::info!("instance {}: its teleport didn't reach a game in {} s", e.inst.id, TELEPORT_MS / 1000);
+        e.facts.teleporting = false;
+        e.teleport_at = None;
+    }
+    let written = !e.closing && e.writer_at.is_some_and(|w| now - w < WRITER_PROOF_MS);
+    let handing_off = !e.closing && e.stranger_seen && e.log.is_some() && e.died_at.is_some_and(|d| now - d < HANDOFF_WAIT_MS);
+    let ended = !e.alive && !may_appear(e, now) && !written && !handing_off;
+    let (state, mut note) = state_of(&e.facts, e.log.is_some(), ended, e.closing, e.expected_user);
+    // A client Altbase closed for its memory ends as `Mem` (its note: "Closed").
+    let crash = match ended {
+        true if e.closing && e.mem_restart => Some(CrashKind::Mem),
+        true if e.closing && e.scheduled_restart => Some(CrashKind::Scheduled),
+        true => crash_kind(&e.facts, e.hung(), note.as_deref()),
+        false => None,
+    };
+    e.inst.sign_in_problem = note.as_ref().is_some_and(|n| *n == wrong_account() || *n == challenged() || *n == auth_failed());
+    if !ended && e.hung() && note.is_none() {
+        note = Some(hung());
+    }
+    if let Some(g) = e.gave_up.as_ref().filter(|_| !e.closing) {
+        note = Some(g.clone());
+    }
+    e.inst.state = state;
+    e.inst.note = note;
+    if matches!(state, InstanceState::Starting | InstanceState::Joining) {
+        e.loading_since.get_or_insert(now);
+    } else {
+        e.loading_since = None;
+    }
+    if e.facts.place_id.is_some() {
+        e.inst.place_id = e.facts.place_id;
+    }
+    if e.facts.job_id.is_some() {
+        e.inst.job_id.clone_from(&e.facts.job_id);
+    }
+    if ended {
+        e.inst.ended_at = Some(now);
+    }
+    crash
+}
+
+/// State and note from what the log said, whether the log is bound, whether the client is
+/// gone for good, whether the user closed it, and the account's user id (pure).
+fn state_of(facts: &LogFacts, bound: bool, ended: bool, closing: bool, expected_user: Option<i64>) -> (InstanceState, Option<String>) {
+    let problem = if facts.replaced {
+        Some(tr!("Replaced by another Roblox client"))
+    } else if matches!((facts.user_id, expected_user), (Some(got), Some(want)) if got != want) {
+        Some(wrong_account())
+    } else if facts.challenged {
+        Some(challenged())
+    } else if facts.auth_failed {
+        Some(auth_failed())
+    } else {
+        None
+    };
+    if ended {
+        let note = if closing { closed() } else { problem.unwrap_or_else(unexpected) };
+        return (InstanceState::Exited, Some(note));
+    }
+    let state = if facts.teleporting {
+        InstanceState::Joining
+    } else if facts.disconnected {
+        InstanceState::Disconnected
+    } else if facts.in_game {
+        InstanceState::InGame
+    } else if bound {
+        InstanceState::Joining
+    } else {
+        InstanceState::Starting
+    };
+    (state, problem)
+}
+
+/// Keeps the newest `MAX_ENDED` ended entries, and those still being relaunched.
+fn prune(entries: &mut Vec<Entry>) {
+    loop {
+        let ended = entries.iter().enumerate().filter(|(_, e)| e.inst.state == InstanceState::Exited && e.relaunching.is_none());
+        if ended.clone().count() <= MAX_ENDED {
+            return;
+        }
+        let Some((i, _)) = ended.min_by_key(|(_, e)| e.inst.ended_at) else { return };
+        entries.remove(i);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::InstanceState::*;
+
+    // The notes in English (tests run in English).
+    const WRONG_ACCOUNT: &str = "Signed in as another account";
+
+    #[test]
+    fn the_layout_preview_changes_nothing() {
+        let t = Tracker::new();
+        t.set_slots(vec![4], false);
+        let (seen, _) = t.preview_slots(&[1, 2]);
+        assert_eq!(seen, [1, 2], "nothing runs: slot 0 is free again and the batch follows the list");
+        assert_eq!(*t.slots(), [4], "the real slots are untouched");
+        t.reserve_slots(&[1, 2], true);
+        assert_eq!(*t.slots(), seen, "a real batch gets what the preview showed");
+    }
+
+    #[test]
+    fn the_layout_preview_marks_only_started_clients_running() {
+        let t = Tracker::new();
+        t.reserve_slots(&[1, 2], true);
+        let (seen, running) = t.preview_slots(&[3]);
+        assert_eq!(seen, [1, 2, 3], "the batch still starting keeps its slots");
+        assert!(running.is_empty(), "none of its accounts has a client yet");
+    }
+
+    #[test]
+    fn a_batch_keeps_its_slots_until_it_ends() {
+        let t = Tracker::new();
+        t.reserve_slots(&[1, 2, 3], true);
+        assert_eq!(t.slot_of(9), (3, 4), "a launch during the batch goes after it, not into a pending slot");
+        t.end_batch_slots();
+        assert!(t.slots().is_empty(), "none of them started: their slots go");
+        t.set_slots(vec![7, 8], true);
+        assert_eq!((t.slot_of(8), t.fit_n.load(Ordering::Relaxed)), ((1, 2), 2), "Tile's order is the layout's");
+    }
+
+    #[test]
+    fn layout_slots_follow_the_list() {
+        let none = |_| false;
+        let mut s = Vec::new();
+        reserve(&mut s, &[5, 3, 9], &none);
+        assert_eq!(s, [5, 3, 9], "list order, not load order");
+        // An account keeps its slot; a new one takes the lowest free (not live, not asked for) one.
+        let live = |a| a == 5 || a == 9;
+        reserve(&mut s, &[9, 7], &live);
+        assert_eq!(s, [5, 7, 9]);
+        // A live account is never displaced, and free slots at the end go.
+        let only5 = |a| a == 5;
+        reserve(&mut s, &[], &only5);
+        assert_eq!(s, [5]);
+        reserve(&mut s, &[], &none);
+        assert!(s.is_empty(), "nothing running: no slots");
+    }
+    const CHALLENGED: &str = "Roblox wants a human check";
+    const UNEXPECTED: &str = "Closed unexpectedly";
+    const HUNG: &str = "Not responding";
+    const BTID: i64 = 5_550_001;
+    const USER: i64 = 261;
+
+    /// Fake processes: what `roblox()` lists and `start_time` finds (bootstrappers included),
+    /// and which of them don't respond.
+    struct Fake(Mutex<Vec<ProcInfo>>, Mutex<Vec<u32>>, Mutex<Vec<u32>>);
+
+    impl Fake {
+        fn new(procs: &[(u32, u64)]) -> Fake {
+            let f = Fake(Mutex::new(Vec::new()), Mutex::new(Vec::new()), Mutex::new(Vec::new()));
+            f.set(procs);
+            f
+        }
+
+        fn set(&self, procs: &[(u32, u64)]) {
+            *self.0.lock().unwrap() = procs.iter().map(|&(pid, start_time)| ProcInfo { pid, start_time }).collect();
+        }
+
+        fn set_hung(&self, pids: &[u32]) {
+            *self.1.lock().unwrap() = pids.to_vec();
+        }
+
+        fn set_unreadable(&self, pids: &[u32]) {
+            *self.2.lock().unwrap() = pids.to_vec();
+        }
+    }
+
+    impl Procs for Fake {
+        fn start_time(&self, pid: u32) -> Option<u64> {
+            self.0.lock().unwrap().iter().find(|p| p.pid == pid).map(|p| p.start_time)
+        }
+
+        fn roblox(&self) -> Vec<ProcInfo> {
+            self.0.lock().unwrap().clone()
+        }
+
+        fn unreadable_client(&self, pid: u32) -> bool {
+            self.2.lock().unwrap().contains(&pid)
+        }
+
+        fn hung(&self, pid: u32) -> bool {
+            self.1.lock().unwrap().contains(&pid)
+        }
+    }
+
+    fn now_ms() -> i64 {
+        crate::commands::now_ms()
+    }
+
+    fn info(pid: u32, started_at: i64, via_bootstrapper: bool) -> LaunchInfo {
+        LaunchInfo { account_id: 1, pid, browser_tracker_id: BTID, place_id: Some(1818), started_at, via_bootstrapper, warning: None, fps_cap: None, pid_start: None }
+    }
+
+    fn target() -> LaunchTarget {
+        LaunchTarget::Place { place_id: 1818, launch_data: None }
+    }
+
+    #[test]
+    fn live_client_per_account() {
+        let t = Tracker::new();
+        let id = t.register(&info(900, now_ms(), false), target()).id;
+        assert!(t.has_live_client(1) && !t.has_live_client(2));
+        assert!(t.claim(1).is_none(), "a running account can't be claimed");
+        let claim = t.claim(2).unwrap();
+        assert!(t.claim(2).is_none(), "nor one being launched");
+        drop(claim);
+        assert!(t.claim(2).is_some());
+        t.entries().iter_mut().find(|e| e.inst.id == id).unwrap().inst.state = Disconnected;
+        assert!(!t.has_live_client(1) && t.claim(1).is_some());
+    }
+
+    #[test]
+    fn a_client_taken_over_is_timed_from_then() {
+        let t = Tracker::new();
+        let start = now_ms();
+        t.register(&LaunchInfo { pid_start: Some(50), ..info(900, start, false) }, target());
+        let mut entries = t.entries();
+        let e = &mut entries[0];
+        settle(e, start);
+        let later = start + 100_000;
+        adopt(e, ProcInfo { pid: 901, start_time: 60 }, &mut Vec::new());
+        settle(e, later);
+        assert!(e.runs_free(later + REBIND_MS - 1), "its whole load is free");
+        assert!(!e.runs_free(later + REBIND_MS));
+    }
+
+    #[test]
+    fn loading_hung_and_full_quality_clients_run_free() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let a = t.register(&LaunchInfo { pid_start: Some(50), ..info(900, start, false) }, target()).id;
+        let free = |now| t.free(&[], now);
+        let set = |f: &dyn Fn(&mut Entry)| f(t.entries().iter_mut().find(|e| e.inst.id == a).unwrap());
+        let settled = |now| set(&|e| _ = settle(e, now));
+        assert!(free(start).is_empty(), "not seen by a poll yet");
+
+        // A first load: free from the poll that sees it, for as long as a load may take.
+        settled(start);
+        assert_eq!(free(start + REBIND_MS - 1), std::slice::from_ref(&a));
+        assert!(free(start + REBIND_MS).is_empty(), "stuck loading: limited again");
+
+        // In a game: limited.
+        set(&|e| e.facts.in_game = true);
+        settled(start + 200_000);
+        assert_eq!(t.get(&a).unwrap().state, InGame);
+        assert!(free(start + 200_000).is_empty());
+
+        // A teleport is timed from itself, not from the launch.
+        let tp = start + 3_600_000;
+        set(&|e| e.facts.teleporting = true);
+        settled(tp);
+        assert_eq!(t.get(&a).unwrap().state, Joining);
+        assert_eq!(free(tp + TELEPORT_MS - 1), std::slice::from_ref(&a));
+        assert!(free(tp + TELEPORT_MS).is_empty());
+        settled(tp + TELEPORT_MS);
+        assert_eq!(t.get(&a).unwrap().state, InGame, "the teleport gave up");
+        assert!(free(tp + TELEPORT_MS).is_empty());
+
+        // Not responding: free well before it counts as hung.
+        let later = tp + 100_000;
+        set(&|e| e.hung_polls = HANG_FREE_POLLS - 1);
+        assert!(free(later).is_empty());
+        set(&|e| e.hung_polls = HANG_FREE_POLLS);
+        assert_eq!(free(later), std::slice::from_ref(&a));
+        set(&|e| e.hung_polls = 0);
+
+        assert_eq!(t.free(&[1], later), std::slice::from_ref(&a), "Full quality");
+        assert!(t.free(&[2], later).is_empty(), "another account");
+    }
+
+    #[test]
+    fn each_client_is_handed_out_once_when_it_reaches_a_game() {
+        let t = Tracker::new();
+        let a = t.register(&LaunchInfo { pid_start: Some(50), ..info(900, now_ms(), false) }, target()).id;
+        let b = t.register(&LaunchInfo { pid_start: Some(60), ..info(901, now_ms(), true) }, target()).id;
+        assert_eq!(t.first_in_game(&|_| true), Vec::<u32>::new(), "still loading: left alone");
+        t.entries().iter_mut().for_each(|e| e.inst.state = InGame);
+        assert_eq!(t.first_in_game(&|_| false), Vec::<u32>::new(), "no window yet");
+        assert_eq!(t.first_in_game(&|_| true), [900], "a bootstrapper isn't the client");
+        assert_eq!(t.first_in_game(&|_| true), Vec::<u32>::new(), "once");
+        t.entries().iter_mut().find(|e| e.inst.id == b).unwrap().adopted = true;
+        assert_eq!(t.first_in_game(&|_| true), [901]);
+        assert!(t.set_micro(&a, Some((320, 240))) && t.get(&a).unwrap().micro);
+        assert_eq!(t.get(&a).unwrap().micro_size, Some((320, 240)));
+        assert!(!t.set_micro("nope", Some((320, 240))));
+    }
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("altbase-tracker-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn append(path: &Path, msgs: &[String]) {
+        use std::io::Write;
+        let mut f = std::fs::File::options().create(true).append(true).open(path).unwrap();
+        for m in msgs {
+            writeln!(f, "2026-10-19T09:08:03.437Z,0.437181,0a50,6,Info {m}").unwrap();
+        }
+    }
+
+    fn btid_line(btid: i64) -> String {
+        format!("[FLog::LogWin32BTId] LogWin32BTId, App, web launch, websiteBTId is {btid}")
+    }
+
+    fn join_lines(user: i64) -> Vec<String> {
+        vec![
+            "[FLog::Output] ! Joining game '0d6c3f4e-5b2a-4c1d-9e8f-7a6b5c4d3e2f' place 1818 at 10.9.2.90".into(),
+            format!("[FLog::GameJoinLoadTime] Report game_join_loadtime: placeid:1818, join_time:0.68, userid:{user},"),
+        ]
+    }
+
+    fn replicator() -> String {
+        "[FLog::Network] Replicator created: 000000007A26CF00".into()
+    }
+
+    fn user_of(_: i64) -> Option<i64> {
+        Some(USER)
+    }
+
+    fn state(t: &Tracker, id: &str) -> (InstanceState, Option<String>, u32) {
+        let i = t.get(id).unwrap();
+        (i.state, i.note, i.pid)
+    }
+
+    fn note(s: &str) -> Option<String> {
+        Some(s.into())
+    }
+
+    #[test]
+    fn states_from_facts() {
+        let f = |set: fn(&mut LogFacts)| {
+            let mut f = LogFacts::default();
+            set(&mut f);
+            f
+        };
+        let none = LogFacts::default();
+        let in_game = f(|f| f.in_game = true);
+        assert_eq!(state_of(&none, false, false, false, Some(USER)), (Starting, None));
+        assert_eq!(state_of(&none, true, false, false, Some(USER)), (Joining, None));
+        assert_eq!(state_of(&in_game, true, false, false, Some(USER)), (InGame, None));
+        let dropped = f(|f| {
+            f.in_game = true;
+            f.disconnected = true;
+        });
+        assert_eq!(state_of(&dropped, true, false, false, Some(USER)), (Disconnected, None));
+
+        let other = f(|f| f.user_id = Some(USER + 1));
+        assert_eq!(state_of(&other, true, false, false, Some(USER)), (Joining, note("Signed in as another account")));
+        assert_eq!(state_of(&other, true, false, false, None), (Joining, None));
+        assert_eq!(state_of(&f(|f| f.user_id = Some(USER)), true, false, false, Some(USER)), (Joining, None));
+        let challenged = f(|f| f.challenged = true);
+        assert_eq!(state_of(&challenged, true, false, false, Some(USER)), (Joining, note("Roblox wants a human check")));
+        let mut refused = LogFacts::default();
+        refused.auth_failed = true;
+        assert_eq!(state_of(&refused, true, false, false, Some(USER)), (Joining, note("Roblox refused the sign-in (error 403)")));
+        assert_eq!(state_of(&refused, true, true, false, Some(USER)), (Exited, note("Roblox refused the sign-in (error 403)")));
+        assert_eq!(state_of(&refused, true, true, true, Some(USER)), (Exited, note("Closed")));
+
+        let teleport = f(|f| (f.in_game, f.teleporting, f.disconnected) = (true, true, true));
+        assert_eq!(state_of(&teleport, true, false, false, Some(USER)), (Joining, None), "not a disconnect");
+        let failed = f(|f| (f.in_game, f.disconnected) = (true, true));
+        assert_eq!(state_of(&failed, true, false, false, Some(USER)), (Disconnected, None));
+
+        let replaced = f(|f| f.replaced = true);
+        assert_eq!(state_of(&replaced, true, true, false, Some(USER)), (Exited, note("Replaced by another Roblox client")));
+        assert_eq!(state_of(&replaced, true, true, true, Some(USER)), (Exited, note("Closed")));
+        assert_eq!(state_of(&in_game, true, true, false, Some(USER)), (Exited, note("Closed unexpectedly")));
+        assert_eq!(state_of(&in_game, true, true, true, Some(USER)), (Exited, note("Closed")));
+        assert_eq!(state_of(&other, true, true, false, Some(USER)), (Exited, note("Signed in as another account")));
+        assert_eq!(state_of(&challenged, false, true, false, Some(USER)), (Exited, note("Roblox wants a human check")));
+    }
+
+    #[test]
+    fn lists_running_first_and_keeps_30_ended() {
+        let t = Tracker::new();
+        let ids: Vec<String> = (0..40).map(|n| t.register(&info(100 + n, 1_000 + n as i64, false), target()).id).collect();
+        {
+            let mut v = t.entries();
+            // 35 end (the first one last), 5 keep running.
+            for (n, e) in v.iter_mut().enumerate().take(35) {
+                e.inst.state = Exited;
+                e.inst.ended_at = Some(if n == 0 { 99_999 } else { 5_000 + n as i64 });
+            }
+            prune(&mut v);
+        }
+        let list = t.list();
+        assert_eq!(list.len(), 35);
+        let running: Vec<&str> = list[..5].iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(running, ids[35..].iter().map(String::as_str).collect::<Vec<_>>());
+        assert_eq!(list[5].id, ids[0]);
+        assert_eq!(list[6].id, ids[34]);
+        assert_eq!(list.last().unwrap().id, ids[6]);
+
+        t.mark_closing(&ids[0]);
+        assert!(!t.entries().iter().any(|e| e.closing));
+        t.clear_ended();
+        assert_eq!(t.list().len(), 5);
+    }
+
+    #[test]
+    fn follows_a_client_from_start_to_exit() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+
+        assert!(poll(start + 1_000).is_empty());
+        assert_eq!(state(&t, &id), (Starting, None, 100));
+
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_last.log");
+        append(&dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_CrashHandler_last.log"), &[btid_line(BTID)]);
+        append(&log, &[btid_line(BTID)]);
+        assert!(!poll(start + 2_000).is_empty());
+        assert_eq!(state(&t, &id), (Joining, None, 100));
+        assert!(poll(start + 3_000).is_empty());
+
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        assert!(!poll(start + 4_000).is_empty());
+        let i = t.get(&id).unwrap();
+        assert_eq!((i.state, i.job_id.as_deref(), i.place_id), (InGame, Some("0d6c3f4e-5b2a-4c1d-9e8f-7a6b5c4d3e2f"), Some(1818)));
+        // In a game: anti-AFK may press keys in it, counting from when it got there.
+        assert_eq!(t.afk_clients().iter().map(|c| (c.pid, c.since)).collect::<Vec<_>>(), [(100, start + 4_000)]);
+        t.mark_afk(&id, start + 4_500);
+        assert_eq!(t.afk_clients()[0].since, start + 4_500);
+        assert!(t.set_anti_afk(&id, false) && t.afk_clients().is_empty());
+
+        append(&log, &["[FLog::Network] Disconnection Notification. Reason: 267".into()]);
+        let moved = poll(start + 5_000);
+        assert_eq!(moved.iter().map(|m| (m.before.state, m.after.state)).collect::<Vec<_>>(), [(InGame, Disconnected)]);
+        assert_eq!(state(&t, &id).0, Disconnected);
+        // The opt-out and the last press outlive the poll.
+        assert_eq!(t.get(&id).map(|i| (i.anti_afk, i.afk_at)), Some((false, Some(start + 4_500))));
+
+        // Reached the game, so a vanished process is gone at once.
+        procs.set(&[]);
+        assert!(!poll(start + 6_000).is_empty());
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        assert_eq!(t.get(&id).unwrap().ended_at, Some(start + 6_000));
+        assert!(poll(start + 7_000).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn notes_the_wrong_account_and_a_requested_close() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, (start / 1000) as u64)]);
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_last.log");
+        append(&log, &[btid_line(BTID)]);
+        append(&log, &join_lines(USER + 1));
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+        assert_eq!(state(&t, &id), (Joining, note("Signed in as another account"), 100));
+
+        t.mark_closing(&id);
+        procs.set(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn readopts_only_the_same_running_client() {
+        let old = Tracker::new();
+        let start = now_ms();
+        let a = old.register(&LaunchInfo { pid_start: Some(50), ..info(900, start, false) }, target()).id;
+        old.register(&LaunchInfo { pid_start: Some(60), ..info(901, start, true) }, target());
+        old.entries()[0].offset = 4_096;
+        old.entries()[0].facts.in_game = true;
+        old.entries()[0].in_game_at = Some(start + 9);
+        // Per-client options travel with it.
+        assert!(old.set_limits(&a, Limits { cpu_cap: Some(20), ..Limits::default() }).is_some() && old.set_anti_afk(&a, false));
+        // The bootstrapper one isn't the client yet: not saved.
+        let saved = old.saved();
+        assert_eq!(saved.len(), 1);
+        let json = serde_json::to_string(&saved).unwrap();
+        let saved: Vec<Saved> = serde_json::from_str(&json).unwrap();
+        assert_eq!(saved, old.saved(), "JSON round trip");
+
+        let p = |pid, start_time| ProcInfo { pid, start_time };
+        let fresh = Tracker::new();
+        assert!(readoptable(&saved[0], &[p(900, 50)], &fresh.entries()));
+        assert!(!readoptable(&saved[0], &[], &fresh.entries()), "gone");
+        assert!(!readoptable(&saved[0], &[p(900, 51)], &fresh.entries()), "pid reused");
+        assert!(!readoptable(&saved[0], &[p(900, 50)], &old.entries()), "already followed");
+
+        assert_eq!(fresh.readopt(saved.clone(), &[p(900, 50)], &[]), [(900, 50)]);
+        assert_eq!(fresh.readopt(saved, &[p(900, 50)], &[]), [], "not twice");
+        let e = fresh.entries()[0].clone();
+        assert_eq!((e.offset, e.facts.in_game, e.in_game_at, e.window_seen), (4_096, true, Some(start + 9), true));
+        assert_eq!(fresh.get(&a), old.get(&a), "the UI sees it as before");
+        assert_eq!(fresh.clients().len(), 1, "limits apply to it again");
+    }
+
+    #[test]
+    fn a_client_that_cant_be_read_is_followed_again_after_a_restart() {
+        let old = Tracker::new();
+        old.register(&LaunchInfo { pid_start: Some(50), ..info(900, now_ms(), false) }, target());
+        let saved = old.saved();
+        let p = |pid, start_time| ProcInfo { pid, start_time };
+        assert!(with_unreadable(&saved, vec![], |_| false).is_empty(), "gone");
+        assert_eq!(with_unreadable(&saved, vec![], |pid| pid == 900), [p(900, 50)], "at its saved start time");
+        assert_eq!(with_unreadable(&saved, vec![p(900, 51)], |_| true), [p(900, 51)], "readable: another process took the pid");
+        let fresh = Tracker::new();
+        assert_eq!(fresh.readopt(saved.clone(), &with_unreadable(&saved, vec![], |_| true), &[]), [(900, 50)]);
+    }
+
+    #[test]
+    fn a_reused_pid_is_not_the_client() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, 10)]);
+        t.poll(None, &procs, &user_of, start + 1_000);
+        procs.set(&[(100, 20)]);
+        t.poll(None, &procs, &user_of, start + 121_000);
+        assert_eq!(state(&t, &id).0, Exited);
+    }
+
+    /// A log written by a client that started at `secs`: created then, modified a bit ago.
+    fn old_log(path: &Path, secs: u64) {
+        use std::os::windows::fs::FileTimesExt;
+        let times = std::fs::FileTimes::new()
+            .set_created(UNIX_EPOCH + Duration::from_secs(secs))
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(2));
+        std::fs::File::options().write(true).open(path).unwrap().set_times(times).unwrap();
+    }
+
+    #[test]
+    fn rebinds_after_an_updater_relaunch() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        // Launched 10 s ago; the updater ran in between.
+        let start = now_ms() - 10_000;
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let other = t.register(&LaunchInfo { browser_tracker_id: BTID + 1, ..info(300, start, false) }, target()).id;
+        let procs = Fake::new(&[(100, secs), (300, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+
+        let old = dir.join("0.743.0.7431134_20261024T120000Z_Player_AAAAA_last.log");
+        append(&old, &[btid_line(BTID), "[FLog::UpdateController] Update check thread: updateRequired TRUE".into()]);
+        old_log(&old, secs);
+        poll(start + 1_000);
+        assert_eq!(state(&t, &id), (Joining, None, 100));
+
+        // The client quits for the update: not gone yet, nothing new to bind.
+        procs.set(&[(300, secs)]);
+        poll(start + 2_000);
+        assert_eq!(state(&t, &id), (Joining, None, 100));
+
+        // The relaunched client: new PID, new log naming the same tracker id. The other
+        // entry's client is never picked.
+        let new = dir.join("0.744.0.7441080_20261024T120010Z_Player_BBBBB_last.log");
+        append(&new, &[btid_line(BTID)]);
+        append(&new, &join_lines(USER));
+        procs.set(&[(300, secs), (200, secs + 10)]);
+        poll(start + 12_000);
+        assert_eq!(state(&t, &id), (Joining, None, 200));
+        append(&new, &[replicator()]);
+        poll(start + 13_000);
+        assert_eq!(state(&t, &id), (InGame, None, 200));
+        assert_eq!(state(&t, &other), (Starting, None, 300));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_dead_clients_own_log_is_not_a_relaunch() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms() - 10_000;
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, secs)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+
+        // It quits before its log is bound; a client the user started at about the same time
+        // keeps running. Still waiting for a relaunch, not adopting that one.
+        let own = dir.join("0.743.0.7431134_20261024T120000Z_Player_AAAAA_last.log");
+        append(&own, &[btid_line(BTID)]);
+        old_log(&own, secs);
+        procs.set(&[(400, secs + 1)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert_eq!(state(&t, &id), (Joining, None, 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A client in a game, followed since `start`, with its log bound; (tracker, id, fake, log).
+    fn in_game_client(dir: &Path, start: i64) -> (Tracker, String, Fake, PathBuf) {
+        let t = Tracker::new();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, (start / 1000) as u64)]);
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_last.log");
+        append(&log, &[btid_line(BTID)]);
+        append(&log, &join_lines(USER));
+        append(&log, &["[FLog::Network] Replicator created".to_owned()]);
+        t.poll(Some(dir), &procs, &user_of, start + 1_000);
+        assert_eq!(state(&t, &id), (InGame, None, 100));
+        (t, id, procs, log)
+    }
+
+    #[test]
+    fn a_client_that_cant_be_read_but_runs_isnt_closed() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, _) = in_game_client(&dir, start);
+        procs.set(&[]);
+        procs.set_unreadable(&[100]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        t.poll(Some(&dir), &procs, &user_of, start + 300_000);
+        assert_eq!(state(&t, &id), (InGame, None, 100));
+        assert!(t.take_crashes().is_empty());
+        // Once it really has gone, it ended.
+        procs.set_unreadable(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 301_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_start_time_unread_at_launch_is_read_later() {
+        let t = Tracker::new();
+        let start = now_ms() - 600_000;
+        let launched = LaunchInfo { pid_start: Some(0), ..info(100, start, false) };
+        let id = t.register(&launched, target()).id;
+        let procs = Fake::new(&[(100, 555)]);
+        t.poll(None, &procs, &user_of, start + 300_000);
+        assert_eq!(state(&t, &id).0, Starting);
+        // Another process taking the pid later is still told apart.
+        procs.set(&[(100, 556)]);
+        t.poll(None, &procs, &user_of, start + 301_000);
+        assert_eq!(state(&t, &id).0, Exited);
+    }
+
+    #[test]
+    fn a_log_that_grows_after_its_process_went_means_a_running_client() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        procs.set(&[]);
+        let gone = start + 2_000;
+        t.entries().iter_mut().for_each(|e| e.died_at = Some(gone));
+        append(&log, &["[FLog::Network] still here".to_owned()]);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS);
+        assert_eq!(state(&t, &id), (InGame, None, 100), "the log grew after it went");
+        assert!(t.take_crashes().is_empty());
+
+        // Whoever started with that log is the client now.
+        procs.set(&[(200, created_secs(&log).unwrap())]);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS + 1_000);
+        assert_eq!(state(&t, &id), (InGame, None, 200));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_in_a_game_for_the_interval_is_rejoined_on_schedule() {
+        let dir = temp_dir();
+        let start = now_ms() - 10 * 3_600_000;
+        let (t, id, _procs, _log) = in_game_client(&dir, start);
+        let in_game = start + 1_000;
+        t.check_schedule(0, in_game + 9 * 3_600_000);
+        assert!(t.take_rejoins().is_empty(), "off");
+        t.check_schedule(3, in_game + 3 * 3_600_000 - 1);
+        assert!(t.take_rejoins().is_empty(), "not yet");
+        t.check_schedule(3, in_game + 3 * 3_600_000);
+        assert_eq!(t.take_rejoins().iter().map(|r| r.cause).collect::<Vec<_>>(), [CrashKind::Scheduled]);
+        assert!(t.take_rejoins().is_empty(), "handed out once");
+        t.mark_restart(&id, Some(CrashKind::Scheduled));
+        assert!(t.entries().iter().any(|e| e.inst.id == id && e.scheduled_restart));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_game_handed_to_another_roblox_process_is_still_followed() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        // Roblox's tray copy (started long before, so never taken for this client) runs on.
+        procs.set(&[(300, 1)]);
+        let gone = start + 2_000;
+        t.poll(Some(&dir), &procs, &user_of, gone);
+        assert_eq!(state(&t, &id).0, InGame, "not ended at once: another Roblox runs");
+        append(&log, &["[FLog::Network] still here".to_owned()]);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS);
+        t.poll(Some(&dir), &procs, &user_of, gone + HANDOFF_WAIT_MS + 1_000);
+        assert_eq!(state(&t, &id).0, InGame, "its log still grows");
+        assert!(t.take_crashes().is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_handoff_that_never_writes_ends_after_the_wait() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, _log) = in_game_client(&dir, start);
+        procs.set(&[(300, 1)]);
+        let gone = start + 2_000;
+        t.poll(Some(&dir), &procs, &user_of, gone);
+        assert_eq!(state(&t, &id).0, InGame);
+        t.poll(Some(&dir), &procs, &user_of, gone + HANDOFF_WAIT_MS);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_the_client_started_with_the_log_is_picked() {
+        let p = |pid, start_time| ProcInfo { pid, start_time };
+        let procs = [p(1, 100), p(2, 104), p(3, 200), p(4, 106)];
+        assert_eq!(pick_client(&procs, Some(105), 90, &[]).map(|c| c.pid), Some(2), "the closest in time");
+        assert_eq!(pick_client(&procs, Some(105), 90, &[2]).map(|c| c.pid), Some(4), "not one already followed");
+        assert_eq!(pick_client(&procs, Some(105), 105, &[]).map(|c| c.pid), Some(4), "not one from before the launch");
+        // The user's own client, started later, isn't taken just for being the newest.
+        assert_eq!(pick_client(&procs, Some(150), 90, &[]), None);
+        assert_eq!(pick_client(&procs, None, 90, &[]), None, "no log, no claim");
+    }
+
+    #[test]
+    fn a_crashing_clients_last_words_prove_nothing() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        procs.set(&[]);
+        append(&log, &["[FLog::Network] last words".to_owned()]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_log_that_stops_growing_ends_the_client_after_all() {
+        let dir = temp_dir();
+        let start = now_ms() - 600_000;
+        let (t, id, procs, log) = in_game_client(&dir, start);
+        procs.set(&[]);
+        let gone = start + 2_000;
+        t.entries().iter_mut().for_each(|e| e.died_at = Some(gone));
+        append(&log, &["[FLog::Network] still here".to_owned()]);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS);
+        assert_eq!(state(&t, &id).0, InGame);
+        t.poll(Some(&dir), &procs, &user_of, gone + WRITER_AFTER_MS + WRITER_PROOF_MS);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_client_gone_before_the_game_ends_after_120_s() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[]);
+        t.poll(None, &procs, &user_of, start + 1_000);
+        assert_eq!(state(&t, &id).0, Starting);
+        t.poll(None, &procs, &user_of, start + 119_000);
+        assert_eq!(state(&t, &id).0, Starting);
+        t.poll(None, &procs, &user_of, start + 120_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 100));
+        let ended = t.take_crashes().remove(0);
+        assert_eq!((ended.uptime_ms, ended.died_after_ms), (120_000, Some(1_000)), "when it really went, not when it was given up on");
+    }
+
+    #[test]
+    fn adopts_the_client_behind_a_bootstrapper() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(900, start, true), target()).id;
+        // An older Roblox (the user's own) is never the one.
+        let procs = Fake::new(&[(900, secs), (50, secs - 600)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        assert_eq!(state(&t, &id), (Starting, None, 900));
+
+        // The bootstrapper exits after starting the client; its log appears.
+        procs.set(&[(50, secs - 600), (901, secs + 1)]);
+        poll(start + 3_000);
+        assert_eq!(state(&t, &id), (Starting, None, 900));
+        append(&dir.join("0.744.0.7441080_20261024T120002Z_Player_CCCCC_last.log"), &[btid_line(BTID)]);
+        poll(start + 4_000);
+        assert_eq!(state(&t, &id), (Joining, None, 901));
+        procs.set(&[(50, secs - 600)]);
+        poll(start + 5_000);
+        assert_eq!(state(&t, &id).0, Joining);
+        assert!(t.get(&id).unwrap().via_bootstrapper);
+        poll(start + 121_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed unexpectedly"), 901));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn closing_a_bootstrapper_leaves_its_client_running() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(900, start, true), target()).id;
+        let procs = Fake::new(&[(900, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        assert_eq!(t.mark_closing(&id), Some((900, Some(secs))));
+
+        // The close reached only the bootstrapper; its client shows up within the grace.
+        procs.set(&[(901, secs + 1)]);
+        poll(start + 3_000);
+        assert_eq!(state(&t, &id), (Starting, None, 900));
+        append(&dir.join("0.744.0.7441080_20261024T120002Z_Player_DDDDD_last.log"), &[btid_line(BTID)]);
+        poll(start + 4_000);
+        assert_eq!(state(&t, &id), (Joining, None, 901));
+        // Closing applies to the client again, which then ends as closed.
+        assert_eq!(t.mark_closing(&id), Some((901, Some(secs + 1))));
+        procs.set(&[]);
+        poll(start + 5_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed"), 901));
+
+        // No client within the grace (and no log naming it): closed.
+        let empty = temp_dir();
+        let poll = |now: i64| t.poll(Some(&empty), &procs, &user_of, now);
+        let id = t.register(&info(910, start, true), target()).id;
+        procs.set(&[(910, secs)]);
+        poll(start + 1_000);
+        t.mark_closing(&id);
+        procs.set(&[]);
+        poll(start + 2_000);
+        assert_eq!(state(&t, &id).0, Starting);
+        poll(start + 8_000);
+        assert_eq!(state(&t, &id), (Exited, note("Closed"), 910));
+        assert_eq!(t.mark_closing(&id), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(&empty).unwrap();
+    }
+
+    #[test]
+    fn rejoins_disconnects_and_restarts_crashes_and_hangs() {
+        use CrashKind::*;
+        let base = Tracker::new().register(&info(100, 0, false), target());
+        let inst = |state, note: Option<&str>| Instance { state, note: note.map(Into::into), ..base.clone() };
+        let facts = |disconnected, left| {
+            let mut f = LogFacts::default();
+            (f.disconnected, f.left) = (disconnected, left);
+            f
+        };
+        let (kicked, none) = (facts(true, false), facts(false, false));
+        assert_eq!(wants_rejoin(&inst(Disconnected, None), &kicked, false), Some(Disconnect));
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &kicked, false), Some(Disconnect), "closed by itself after the kick");
+        assert_eq!(wants_rejoin(&inst(Disconnected, None), &facts(true, true), false), None, "the player left");
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &facts(true, true), false), None, "left, then closed");
+        // Ended by itself with nothing in its log: a crash (or the window closed by hand).
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &none, false), Some(Crash));
+        let mut replaced = none.clone();
+        replaced.replaced = true;
+        assert_eq!(wants_rejoin(&inst(Exited, Some(UNEXPECTED)), &replaced, false), None);
+        for n in ["Closed", WRONG_ACCOUNT, CHALLENGED, "Gave up after 3 restarts"] {
+            assert_eq!(wants_rejoin(&inst(Exited, Some(n)), &kicked, false), None, "{n}");
+            assert_eq!(wants_rejoin(&inst(InGame, Some(n)), &none, true), None, "hung, {n}");
+        }
+        assert_eq!(wants_rejoin(&inst(Disconnected, Some(CHALLENGED)), &kicked, false), None);
+        for state in [Starting, Joining, InGame] {
+            assert_eq!(wants_rejoin(&inst(state, None), &none, false), None, "{state:?}");
+            assert_eq!(wants_rejoin(&inst(state, Some(HUNG)), &none, true), Some(Hang), "{state:?}");
+        }
+        assert_eq!(wants_rejoin(&inst(Disconnected, Some(HUNG)), &kicked, true), Some(Hang));
+        assert_eq!(wants_rejoin(&inst(Exited, Some("Closed")), &none, true), None, "a hung client Altbase closed");
+    }
+
+    #[test]
+    fn what_ended_badly() {
+        let facts = |disconnected, left| {
+            let mut f = LogFacts::default();
+            (f.disconnected, f.left) = (disconnected, left);
+            f
+        };
+        assert_eq!(crash_kind(&facts(false, false), false, Some(UNEXPECTED)), Some(CrashKind::Crash));
+        assert_eq!(crash_kind(&facts(true, false), false, Some("Closed")), Some(CrashKind::Disconnect));
+        assert_eq!(crash_kind(&facts(false, false), true, Some("Closed")), Some(CrashKind::Hang));
+        for note in ["Closed", "Replaced by another Roblox client", WRONG_ACCOUNT, CHALLENGED] {
+            assert_eq!(crash_kind(&facts(false, false), false, Some(note)), None, "{note}");
+        }
+        assert_eq!(crash_kind(&facts(true, true), false, Some(UNEXPECTED)), None, "the player left");
+    }
+
+    #[test]
+    fn hands_out_each_disconnect_once() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let launch = |pid: u32, account_id: i64| LaunchInfo { account_id, browser_tracker_id: BTID + i64::from(pid), ..info(pid, start, false) };
+        let follow = LaunchTarget::FollowUser { user_id: 42 };
+        let kicked = t.register(&launch(100, 7), follow.clone()).id;
+        let left = t.register(&launch(200, 1), target()).id;
+        let closed = t.register(&launch(300, 1), target()).id;
+        t.set_rejoins(&kicked, 1);
+        let log = |pid: u32| dir.join(format!("0.744.0.7441080_20261024T1200{pid}Z_Player_R{pid}_last.log"));
+        for pid in [100, 200, 300] {
+            append(&log(pid), &[btid_line(BTID + i64::from(pid))]);
+            append(&log(pid), &join_lines(USER));
+            append(&log(pid), &[replicator()]);
+        }
+        let procs = Fake::new(&[(100, secs), (200, secs), (300, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        assert_eq!(state(&t, &kicked).0, InGame);
+        assert!(t.take_rejoins().is_empty());
+
+        // Kicked (idle, 267) and left by the player (285): only the kick is handed out, once.
+        append(&log(100), &["[FLog::Network] Sending disconnect with reason: 267".into()]);
+        append(&log(200), &["[FLog::Network] Disconnection Notification. Reason: 285".into()]);
+        // A plain exit (the window closed, or a crash) is no disconnect: a restart.
+        procs.set(&[(100, secs), (200, secs)]);
+        poll(start + 2_000);
+        assert_eq!(state(&t, &kicked).0, Disconnected);
+        assert_eq!(state(&t, &closed), (Exited, note("Closed unexpectedly"), 300));
+        let crash = Rejoin { from: closed.clone(), account_id: 1, target: target(), rejoins: 1, cause: CrashKind::Crash };
+        let kick = Rejoin { from: kicked.clone(), account_id: 7, target: follow.clone(), rejoins: 2, cause: CrashKind::Disconnect };
+        assert_eq!(t.take_rejoins(), vec![kick, crash]);
+        assert!(t.take_rejoins().is_empty());
+        // The crash went to the history; the disconnect hasn't ended yet.
+        let ended = t.take_crashes();
+        assert_eq!(ended.iter().map(|c| (c.instance_id.as_str(), c.kind)).collect::<Vec<_>>(), [(closed.as_str(), CrashKind::Crash)]);
+        assert_eq!((ended[0].reason.as_ref(), ended[0].uptime_ms, ended[0].log.as_ref()), (None, 2_000, Some(&log(300))));
+        poll(start + 3_000);
+        assert!(t.take_rejoins().is_empty());
+
+        // Reconnected, then kicked again: handed out again.
+        append(&log(100), &join_lines(USER));
+        append(&log(100), &[replicator()]);
+        poll(start + 4_000);
+        assert!(t.take_rejoins().is_empty());
+        append(&log(100), &["[FLog::Network] Lost connection with reason : You have been kicked from the game".into()]);
+        poll(start + 5_000);
+        assert_eq!(t.take_rejoins().len(), 1);
+        assert_eq!(state(&t, &left).0, Disconnected);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_waiting_relaunch_ends_with_close_all_a_clear_or_a_newer_launch() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        procs.set(&[]);
+        poll(start + 200_000);
+        assert_eq!(t.take_rejoins().len(), 1);
+        assert!(!t.relaunch_wanted(&id, false), "no task at work");
+
+        // One task per client, and it survives the poll.
+        assert!(t.begin_relaunch(&id, start));
+        assert!(!t.begin_relaunch(&id, start) && t.is_relaunching(&id));
+        poll(start + 201_000);
+        assert!(t.relaunch_wanted(&id, false));
+        // Altbase's own close: `closing` no longer ends it, once it says so.
+        t.entries()[0].closing = true;
+        assert!(!t.relaunch_wanted(&id, false));
+        assert!(t.relaunch_wanted(&id, true));
+        t.entries()[0].closing = false;
+
+        // Over the ended limit it stays; finished, it goes.
+        for pid in 0..(MAX_ENDED as u32 + 2) {
+            let other = t.register(&LaunchInfo { account_id: 50 + i64::from(pid), browser_tracker_id: BTID + 10 + i64::from(pid), ..info(1_000 + pid, start, false) }, target()).id;
+            let mut entries = t.entries();
+            let e = entries.iter_mut().find(|e| e.inst.id == other).unwrap();
+            (e.inst.state, e.inst.ended_at) = (Exited, Some(start + 300_000 + i64::from(pid)));
+        }
+        prune(&mut t.entries());
+        assert_eq!(t.entries().iter().filter(|e| e.inst.state == Exited).count(), MAX_ENDED + 1);
+        assert!(t.get(&id).is_some());
+        t.end_relaunch(&id);
+        prune(&mut t.entries());
+        assert!(t.get(&id).is_none());
+
+        // Close all stops the next one, ended or not.
+        let second = t.register(&LaunchInfo { account_id: 2, browser_tracker_id: BTID + 1, ..info(200, start + 1, false) }, target()).id;
+        procs.set(&[(200, secs)]);
+        poll(start + 400_000);
+        procs.set(&[]);
+        poll(start + 600_000);
+        assert!(t.begin_relaunch(&second, start) && t.relaunch_wanted(&second, false));
+        assert_eq!(t.relaunches_open(), 0, "ended: nothing to close");
+        t.cancel_relaunches();
+        assert!(!t.relaunch_wanted(&second, false) && !t.relaunch_wanted(&second, true) && !t.is_relaunching(&second));
+        assert!(t.begin_relaunch(&second, start + 1));
+        assert!(!t.relaunch_wanted(&second, false), "handed out after Close all: counts as closed by the user");
+        t.entries().iter_mut().find(|e| e.inst.id == second).unwrap().closing = false;
+
+        // An older ended client of the account says nothing about this relaunch.
+        let older = t.register(&LaunchInfo { account_id: 2, browser_tracker_id: BTID + 3, ..info(202, start, false) }, target()).id;
+        t.entries().iter_mut().find(|e| e.inst.id == older).unwrap().inst.state = Exited;
+        assert!(t.relaunch_wanted(&second, false));
+        t.set_relaunch_problem(&second, Some("no network".into()));
+        // The account launched since it began: nothing left to do, whatever became of that client.
+        let newer = t.register(&LaunchInfo { account_id: 2, browser_tracker_id: BTID + 2, ..info(201, start + 2, false) }, target()).id;
+        assert!(!t.relaunch_wanted(&second, true));
+        assert_eq!(t.get(&second).unwrap().relaunch_problem, None, "the new client ended the wait");
+        t.entries().iter_mut().find(|e| e.inst.id == newer).unwrap().inst.state = Exited;
+        assert!(!t.relaunch_wanted(&second, true));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_recovered_client_loses_its_gave_up_note() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let log = dir.join("0.744.0.7441080_20261024T120100Z_Player_R100_last.log");
+        append(&log, &[btid_line(BTID)]);
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        let procs = Fake::new(&[(100, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        append(&log, &["[FLog::Network] Sending disconnect with reason: 267".into()]);
+        poll(start + 2_000);
+        assert_eq!(t.take_rejoins().len(), 1);
+        t.begin_relaunch(&id, start);
+        t.set_relaunch_problem(&id, Some("no network".into()));
+        t.give_up(&id, "Gave up".into());
+        poll(start + 3_000);
+        assert_eq!(state(&t, &id).1, note("Gave up"));
+        assert!(t.take_rejoins().is_empty(), "still the same trouble");
+
+        // The player pressed Reconnect: a normal client again, and its next disconnect counts.
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        poll(start + 4_000);
+        assert!(t.take_rejoins().is_empty());
+        assert_eq!(t.get(&id).unwrap().relaunch_problem, None, "back in a game: nothing to wait for");
+        poll(start + 5_000);
+        assert_eq!(state(&t, &id), (InGame, None, 100));
+        append(&log, &["[FLog::Network] Sending disconnect with reason: 267".into()]);
+        poll(start + 6_000);
+        assert_eq!(t.take_rejoins().len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_closed_client_is_not_rejoined() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let log = dir.join("0.744.0.7441080_20261024T120100Z_Player_R100_last.log");
+        append(&log, &[btid_line(BTID)]);
+        append(&log, &join_lines(USER));
+        append(&log, &[replicator()]);
+        let procs = Fake::new(&[(100, secs)]);
+        let poll = |now: i64| t.poll(Some(&dir), &procs, &user_of, now);
+        poll(start + 1_000);
+        t.set_rejoins(&id, 5);
+        append(&log, &["[FLog::Network] Sending disconnect with reason: 267".into()]);
+        poll(start + 2_000);
+        assert_eq!(t.take_rejoins(), vec![Rejoin { from: id.clone(), account_id: 1, target: target(), rejoins: 6, cause: CrashKind::Disconnect }]);
+        assert!(t.still_wants_rejoin(&id));
+
+        // Closed by the user during the launch delay: no longer wanted at once, then ended as
+        // closed, with the disconnect in the history; cleared: still not.
+        t.mark_closing(&id);
+        assert!(!t.still_wants_rejoin(&id));
+        procs.set(&[]);
+        poll(start + 3_000);
+        assert_eq!(state(&t, &id).1, note("Closed"));
+        assert!(!t.still_wants_rejoin(&id));
+        let ended = t.take_crashes();
+        assert_eq!((ended.len(), ended[0].kind), (1, CrashKind::Disconnect));
+        assert_eq!(ended[0].reason.as_deref(), Some("Sending disconnect with reason: 267"));
+        t.clear_ended();
+        assert!(!t.still_wants_rejoin(&id));
+
+        // The panic button covers ended ones waiting for a restart too.
+        let crashed = t.register(&LaunchInfo { browser_tracker_id: BTID + 1, ..info(200, start, false) }, target()).id;
+        procs.set(&[(200, secs)]);
+        poll(start + 4_000);
+        procs.set(&[]);
+        poll(start + 200_000);
+        assert!(t.still_wants_rejoin(&crashed));
+        t.mark_all_closing();
+        assert!(!t.still_wants_rejoin(&crashed));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hung_client_is_restarted_once_and_given_up_on() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, secs)]);
+        let poll = |n: i64| t.poll(None, &procs, &user_of, start + n * 1_000);
+        poll(1);
+        procs.set_hung(&[100]);
+        for n in 2..=i64::from(HANG_POLLS) {
+            poll(n);
+        }
+        assert_eq!(state(&t, &id).1, None, "not yet");
+        assert!(t.take_rejoins().is_empty());
+        poll(i64::from(HANG_POLLS) + 1);
+        assert_eq!(state(&t, &id), (Starting, note(HUNG), 100));
+        assert_eq!(t.take_rejoins().iter().map(|r| r.cause).collect::<Vec<_>>(), [CrashKind::Hang]);
+        assert!(t.take_rejoins().is_empty() && t.still_wants_rejoin(&id));
+
+        // Responding again: no longer wanted, and a later hang counts again.
+        procs.set_hung(&[]);
+        poll(40);
+        assert_eq!(state(&t, &id).1, None);
+        assert!(!t.still_wants_rejoin(&id) && t.take_rejoins().is_empty());
+
+        // The breaker gave up: its note stays, and it is not handed out again.
+        procs.set_hung(&[100]);
+        for n in 41..=41 + i64::from(HANG_POLLS) {
+            poll(n);
+        }
+        assert_eq!(t.take_rejoins().len(), 1);
+        t.give_up(&id, "Gave up after 3 restarts".into());
+        poll(80);
+        assert_eq!(state(&t, &id).1, note("Gave up after 3 restarts"));
+        assert!(!t.still_wants_rejoin(&id));
+
+        // It then ends (never reached a game: after 120 s) as hung.
+        procs.set(&[]);
+        poll(200);
+        assert_eq!(state(&t, &id), (Exited, note("Gave up after 3 restarts"), 100));
+        let ended = t.take_crashes();
+        assert_eq!((ended.len(), ended[0].kind, ended[0].reason.as_deref()), (1, CrashKind::Hang, Some(HUNG)));
+    }
+
+    #[test]
+    fn samples_during_a_batch_reach_the_throttle_but_not_the_restart() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, (start / 1000) as u64)]);
+        t.poll(None, &procs, &user_of, start + 1_000);
+        for _ in 0..MEM_STRIKES + 1 {
+            t.check_memory(4_096, false, &|_, _| Some(5_000));
+        }
+        assert!(t.take_rejoins().is_empty(), "restarts wait for the batch");
+        assert_eq!(t.throttle(4_096).0, [id], "the throttle doesn't");
+    }
+
+    #[test]
+    fn what_is_in_force_reaches_the_instance() {
+        let t = Tracker::new();
+        let id = t.register(&info(100, now_ms(), false), target()).id;
+        let on = Limits { eco: true, ..Limits::default() };
+        assert!(t.set_in_force(&[(id.clone(), on)]));
+        assert_eq!(t.get(&id).unwrap().applied_limits, on);
+        assert!(!t.set_in_force(&[(id.clone(), on)]), "no change");
+        assert!(t.set_in_force(&[]), "nothing in force any more");
+        assert_eq!(t.get(&id).unwrap().applied_limits, Limits::default());
+    }
+
+    #[test]
+    fn a_client_over_its_memory_limit_is_restarted_once() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let secs = (start / 1000) as u64;
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, secs)]);
+        t.poll(None, &procs, &user_of, start + 1_000);
+        let mb = Mutex::new(5_000u64);
+        let read = |_: u32, _: u64| Some(*mb.lock().unwrap());
+        t.check_memory(4_096, true, &read);
+        t.check_memory(4_096, true, &read);
+        assert!(t.take_rejoins().is_empty(), "two samples aren't enough");
+        // Back under it: counting starts over.
+        *mb.lock().unwrap() = 1_000;
+        t.check_memory(4_096, true, &read);
+        *mb.lock().unwrap() = 5_000;
+        for _ in 0..MEM_STRIKES {
+            t.check_memory(4_096, true, &read);
+        }
+        t.poll(None, &procs, &user_of, start + 2_000);
+        assert_eq!(t.take_rejoins().iter().map(|r| r.cause).collect::<Vec<_>>(), [CrashKind::Mem]);
+        assert!(t.take_rejoins().is_empty() && t.still_wants_rejoin(&id));
+        t.check_memory(0, true, &read);
+        assert!(!t.still_wants_rejoin(&id), "turned off");
+        for _ in 0..MEM_STRIKES {
+            t.check_memory(4_096, true, &read);
+        }
+
+        // Altbase closes it: it ends as a memory restart, with what it used.
+        t.mark_restart(&id, Some(CrashKind::Mem));
+        procs.set(&[]);
+        t.poll(None, &procs, &user_of, start + 3_000);
+        assert_eq!(state(&t, &id).1, note("Closed"));
+        let ended = t.take_crashes();
+        assert_eq!((ended.len(), ended[0].kind, ended[0].reason.as_deref()), (1, CrashKind::Mem, Some("Commit size reached 5000 MB")));
+    }
+
+    #[test]
+    fn a_user_close_over_the_memory_limit_is_not_a_memory_restart() {
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, (start / 1000) as u64)]);
+        t.poll(None, &procs, &user_of, start + 1_000);
+        for _ in 0..MEM_STRIKES {
+            t.check_memory(4_096, true, &|_, _| Some(5_000));
+        }
+        t.mark_closing(&id);
+        procs.set(&[]);
+        t.poll(None, &procs, &user_of, start + 2_000);
+        assert!(t.take_crashes().is_empty());
+    }
+
+    #[test]
+    fn a_replaced_client_ends_at_once() {
+        let dir = temp_dir();
+        let t = Tracker::new();
+        let start = now_ms();
+        let id = t.register(&info(100, start, false), target()).id;
+        let procs = Fake::new(&[(100, (start / 1000) as u64)]);
+        let log = dir.join("0.744.0.7441080_20261024T120000Z_Player_ABCDE_last.log");
+        append(&log, &[btid_line(BTID)]);
+        t.poll(Some(&dir), &procs, &user_of, start + 1_000);
+        append(
+            &log,
+            &[
+                "[FLog::WndProcessCheck] WindowsAppReloadTelemetry EventWaitResultUpdate".into(),
+                "[FLog::Systray] Main thread: Received close main window request".into(),
+            ],
+        );
+        procs.set(&[]);
+        t.poll(Some(&dir), &procs, &user_of, start + 2_000);
+        assert_eq!(state(&t, &id), (Exited, note("Replaced by another Roblox client"), 100));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
