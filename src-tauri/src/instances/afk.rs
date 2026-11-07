@@ -25,7 +25,7 @@
 //! fallback.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
@@ -100,7 +100,7 @@ pub fn plan(clients: &[AfkClient], now: i64, interval_min: u32, idle_ms: u32) ->
 }
 
 /// Clients that couldn't be brought to the front, by id: not tried again before this Unix ms.
-static BACKED_OFF: Mutex<HashMap<String, i64>> = Mutex::new(HashMap::new());
+static BACKED_OFF: LazyLock<Mutex<HashMap<String, i64>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 /// The user was told this lock that anti-AFK can't press keys.
 static LOCK_SAID: AtomicBool = AtomicBool::new(false);
 
