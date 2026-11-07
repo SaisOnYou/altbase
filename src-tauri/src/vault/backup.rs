@@ -152,6 +152,13 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::MAGIC, b"ALTBASE1");
+    }
+
     const PASSWORD: &str = "backup pass";
 
     fn tmp_path() -> PathBuf {

@@ -1362,5 +1362,12 @@
   "accounts.settings.failed": "Failed: {count} ({why})",
   "accounts.settings.captcha": "Needs a human check on roblox.com: {names}",
   "settings.credits": "Made by {names}",
-  "settings.builtWith": "Built with Claude · local-only, no telemetry"
+  "settings.builtWith": "Built with Claude · local-only, no telemetry",
+  "settings.updateAvailable": "Altbase {version} が利用できます。",
+  "settings.selfUpdateHint": "Looks for a newer Altbase on GitHub at start and every hour. While no Roblox client runs it installs by itself and restarts; otherwise it's offered in the island. Every installer's signature is checked first, and your accounts and settings are kept.",
+  "settings.selfUpdate": "Altbase の更新を確認",
+  "settings.checkNow": "今すぐ確認",
+  "settings.checking": "確認中…",
+  "settings.upToDate": "Altbase は最新です。",
+  "settings.openReleases": "リリースページを開く"
 }

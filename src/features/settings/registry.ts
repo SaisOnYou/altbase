@@ -188,7 +188,8 @@ const SETTINGS_ENTRIES: readonly Entry[] = [
   { id: "cleanLogs", place: data, label: "settings.cleanLogs", more: "settings.cleanLogsHint", field: "cleanLogs", control: CUSTOM, aliases: ["logs", "disk", "space"] },
   { id: "browserData", place: data, label: "settings.browserData", hint: "settings.browserDataShort", more: "settings.browserDataHint", control: ACTION, aliases: ["captcha", "webview", "reset"] },
 
-  { id: "version", place: about, label: "settings.version", hint: "settings.aboutShort", more: "settings.aboutHint", control: ACTION, aliases: ["version", "about", "changelog", "privacy"] },
+  { id: "selfUpdate", place: about, label: "settings.selfUpdate", more: "settings.selfUpdateHint", field: "selfUpdate", control: CUSTOM, aliases: ["update", "github", "version", "auto"] },
+  { id: "version", place: about, label: "settings.openReleases", hint: "settings.aboutShort", more: "settings.aboutHint", control: ACTION, aliases: ["version", "about", "changelog", "privacy"] },
 ];
 
 const accounts = { view: "accounts", link: true } as const;

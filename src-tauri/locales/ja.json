@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "GitHub の応答を読み取れませんでした。",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} が公開されましたが、署名付きインストーラーがありません。GitHub Releases から入手してください。",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "ダウンロードした Altbase のインストーラーは実行しませんでした: 署名を検証できませんでした。",
+  "Couldn't reach GitHub ({what}).": "GitHub に接続できません ({what})。",
+  "Altbase's HTTP client couldn't start.": "Altbase の HTTP クライアントを起動できませんでした。",
+  "GitHub answered HTTP {status}.": "GitHub の応答: HTTP {status}。",
+  "GitHub sent more than {kb} KB.": "GitHub から {kb} KB を超えるデータが送られました。",
+  "Altbase is already being updated.": "Altbase はすでに更新中です。",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "実行中の起動、一括起動、自動再参加が終わってから Altbase を更新してください。",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Roblox のインストーラーが終わってから Altbase を更新してください。",
+  "Altbase is up to date.": "Altbase は最新です。",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "ダウンロードした Altbase のインストーラーは実行しませんでした: 署名ファイルの形式が不正です。",
+  "Could not start Altbase's installer: {why}": "Altbase のインストーラーを起動できませんでした: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

@@ -77,7 +77,7 @@ let settings: Settings = {
   adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, bandwidthKbps: 0,
   antiAfk: { enabled: false, intervalMin: 15 },
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0, ping: "" },
-  autoUpdate: false, rejoinEveryHours: 0, tabLayout: "top", minimizeOnLaunch: false, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, protectMain: true, muteOnLaunch: false, windowLayout: "off", lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
+  autoUpdate: false, selfUpdate: true, rejoinEveryHours: 0, tabLayout: "top", minimizeOnLaunch: false, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, protectMain: true, muteOnLaunch: false, windowLayout: "off", lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
   allowPublicNetworks: true, language: "",
 };
 
@@ -1241,6 +1241,13 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         if (l === "standbyList") memStandby = 600;
       }
       return null;
+    case "self_update_status":
+      return { current: import.meta.env.APP_VERSION, available: null };
+    case "self_update_check":
+      await sleep(800);
+      return { current: import.meta.env.APP_VERSION, available: null };
+    case "self_update_install":
+      return fail("invalid", "Altbase is up to date.");
     case "roblox_client":
       return { ...robloxClient };
     case "roblox_install": {

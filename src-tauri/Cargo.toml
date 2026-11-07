@@ -1,6 +1,6 @@
 [package]
 name = "altbase"
-version = "1.0.2"
+version = "1.0.3"
 description = "Local-only Roblox account manager and multi-client launcher"
 authors = ["Altbase contributors"]
 license = "MIT"

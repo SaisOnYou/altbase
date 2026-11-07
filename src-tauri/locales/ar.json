@@ -377,5 +377,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "تعذّرت قراءة إجابة GitHub.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "صدر Altbase {version}، لكن دون مثبّت موقَّع. احصل عليه من GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "لم يُشغَّل مثبّت Altbase الذي تم تنزيله: فشل التحقق من توقيعه.",
+  "Couldn't reach GitHub ({what}).": "تعذّر الوصول إلى GitHub ({what}).",
+  "Altbase's HTTP client couldn't start.": "تعذّر بدء عميل HTTP في Altbase.",
+  "GitHub answered HTTP {status}.": "أجاب GitHub بـ HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "أرسل GitHub أكثر من {kb} KB.",
+  "Altbase is already being updated.": "Altbase قيد التحديث بالفعل.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "انتظر انتهاء التشغيل أو الدفعة أو إعادة الانضمام التلقائية الجارية، ثم حدّث Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "انتظر انتهاء مثبّت Roblox، ثم حدّث Altbase.",
+  "Altbase is up to date.": "Altbase محدَّث.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "لم يُشغَّل مثبّت Altbase الذي تم تنزيله: ملف توقيعه تالف.",
+  "Could not start Altbase's installer: {why}": "تعذّر بدء مثبّت Altbase: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

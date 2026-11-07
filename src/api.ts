@@ -43,6 +43,7 @@ import type { PrivateServerPatch } from "./bindings/PrivateServerPatch";
 import type { PrivateServerSettings } from "./bindings/PrivateServerSettings";
 import type { NetworkStatus } from "./bindings/NetworkStatus";
 import type { RobloxClient } from "./bindings/RobloxClient";
+import type { AppUpdate } from "./bindings/AppUpdate";
 import type { GroupJoinReport } from "./bindings/GroupJoinReport";
 import type { AccountSettingsPatch } from "./bindings/AccountSettingsPatch";
 import type { AccountSettingsReport } from "./bindings/AccountSettingsReport";
@@ -63,6 +64,7 @@ export type {
   AccountPatch, AccountSummary, ConflictPolicy, ErrorPayload, Group, GroupInput,
   ImportReport, InstallProgress, Settings, SettingsPatch, VaultMode, VaultStatus,
 };
+export type { AppUpdate } from "./bindings/AppUpdate";
 export type { AccountSettingsPatch } from "./bindings/AccountSettingsPatch";
 export type { PrivacyLevel } from "./bindings/PrivacyLevel";
 export type { MemoryLists } from "./bindings/MemoryLists";
@@ -286,6 +288,12 @@ export const api = {
   robloxClient: () => invoke<RobloxClient>("roblox_client"),
   /** Downloads Roblox's installer, checks it is signed by Roblox Corporation, runs it; progress on onRobloxInstall. */
   robloxInstall: () => invoke<RobloxClient>("roblox_install"),
+  /** Altbase's version and the newer release the last check found (no network). */
+  selfUpdateStatus: () => invoke<AppUpdate>("self_update_status"),
+  /** Asks GitHub for a newer Altbase now. */
+  selfUpdateCheck: () => invoke<AppUpdate>("self_update_check"),
+  /** Downloads the newer Altbase, checks its signature, runs its installer and quits (it starts again, accounts kept). */
+  selfUpdateInstall: () => invoke<void>("self_update_install"),
   /** The startup greeting, spoken by Windows; never waits for it. */
   sayGreeting: () => invoke<void>("say_greeting"),
   /** Physical memory by list, like RAMMap's Use Counts. */
@@ -331,6 +339,8 @@ export const events = {
   onBulkProgress: (f: (p: BulkProgress) => void): Promise<UnlistenFn> => listen<BulkProgress>("bulk://progress", (e) => f(e.payload)),
   /** The client or its versions changed (version check at start and every 30 min, an install). */
   onRobloxClient: (f: (c: RobloxClient) => void): Promise<UnlistenFn> => listen<RobloxClient>("roblox://client", (e) => f(e.payload)),
+  /** A newer Altbase is out (checked at start and every hour). */
+  onAppUpdate: (f: (u: AppUpdate) => void): Promise<UnlistenFn> => listen<AppUpdate>("app://update", (e) => f(e.payload)),
   onRobloxInstall: (f: (p: InstallProgress) => void): Promise<UnlistenFn> => listen<InstallProgress>("roblox://install", (e) => f(e.payload)),
   /** Joined or left a Public network (checked every 10 s). */
   onNetwork: (f: (n: NetworkStatus) => void): Promise<UnlistenFn> => listen<NetworkStatus>("app://network", (e) => f(e.payload)),

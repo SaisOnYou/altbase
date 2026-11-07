@@ -77,6 +77,7 @@ function Root() {
       events.onBulkProgress((p) => qc.setQueryData(qk.bulk, p)),
       events.onRobloxClient((c) => qc.setQueryData(qk.client, c)),
       events.onNetwork((n) => qc.setQueryData(qk.network, n)),
+      events.onAppUpdate((u) => qc.setQueryData(qk.appUpdate, u)),
       // Errors stay until dismissed: the window may have been hidden in the tray.
       events.onNotice((n) => toast(n.message, n.error ? "error" : "ok", n.error, n.error ? "error" : "notification")),
       events.onVaultLocked(() => {

@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "无法读取 GitHub 的响应。",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} 已发布，但没有已签名的安装程序。请从 GitHub Releases 获取。",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "下载的 Altbase 安装程序未运行：签名校验未通过。",
+  "Couldn't reach GitHub ({what}).": "无法连接 GitHub（{what}）。",
+  "Altbase's HTTP client couldn't start.": "Altbase 的 HTTP 客户端无法启动。",
+  "GitHub answered HTTP {status}.": "GitHub 返回 HTTP {status}。",
+  "GitHub sent more than {kb} KB.": "GitHub 发送的数据超过 {kb} KB。",
+  "Altbase is already being updated.": "Altbase 已在更新中。",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "请等待正在进行的启动、批量任务或自动重新加入结束，然后再更新 Altbase。",
+  "Wait for Roblox's installer to finish, then update Altbase.": "请等待 Roblox 安装程序结束，然后再更新 Altbase。",
+  "Altbase is up to date.": "Altbase 已是最新版本。",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "下载的 Altbase 安装程序未运行：签名文件格式错误。",
+  "Could not start Altbase's installer: {why}": "无法启动 Altbase 安装程序：{why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

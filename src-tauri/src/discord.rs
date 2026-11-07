@@ -602,6 +602,13 @@ mod tests {
     use super::*;
     use crate::model::{Instance, LaunchTarget};
 
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::DISCORD_AAD, b"altbase.discord.webhook");
+    }
+
     // The notes in English (tests run in English).
     const HUNG: &str = "Not responding";
     const UNEXPECTED: &str = "Closed unexpectedly";

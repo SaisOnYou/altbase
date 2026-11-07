@@ -299,6 +299,15 @@ fn to_key(bytes: &[u8]) -> Result<Key> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::cookie_aad(7), b"altbase.cookie:7");
+        assert_eq!(super::KEY_AAD, b"altbase.vault.key");
+        assert_eq!(super::RECOVERY_AAD, b"altbase.vault.recovery");
+    }
+
     const AAD: &[u8] = b"altbase.cookie:1";
 
     #[test]

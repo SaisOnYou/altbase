@@ -1,13 +1,16 @@
 name: Build installer
 
-# Builds the Windows installer on GitHub's own Windows machine, so you don't need Rust, the C++
-# Build Tools, Perl or Inno Setup on your PC. Run it by hand (Actions > Build installer > Run
-# workflow) or push a v* tag. The installer appears as a downloadable artifact on the run's page,
-# and on a v* tag also as a draft release you can publish (private repo: only you and people you
-# invite can see it).
+# Builds the Windows installer on GitHub's own Windows machine. Run it by hand (Actions > Build
+# installer > Run workflow) for a downloadable artifact, or push a vX.Y.Z tag to release it:
+# the installer is then signed and published as the latest release, which every Altbase with
+# "Check for Altbase updates" on finds within the hour and installs.
 #
-# Hardening: every action is pinned to a full commit hash (a moved tag can't change what runs),
-# the build job can only read the repo, and no signing keys or other secrets are used at all.
+# Hardening: every action is pinned to a full commit hash (a moved tag can't change what runs).
+# The build job reads the repo and holds no secrets. Only the small `sign` job sees the
+# ALTBASE_UPDATE_KEY secret, after the build, and it runs no third-party code but the pinned
+# artifact actions: it signs "Altbase-Setup-<version>.exe\n" + the installer's bytes (ECDSA P-256,
+# IEEE P1363, base64), checks that against PUBLIC_KEY in src-tauri/src/self_update.rs, and only
+# then hands the pair to `release`.
 on:
   push:
     tags: ["v*"]
@@ -57,19 +60,65 @@ jobs:
           path: dist-installer/Altbase-Setup-${{ steps.v.outputs.version }}.exe
           if-no-files-found: error
 
-  release:
-    # Only for a pushed v* tag; a manual run just leaves the artifact.
+  sign:
+    # Only for a pushed v* tag.
     if: github.ref_type == 'tag'
     needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout: src-tauri/src/self_update.rs
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: Altbase-Setup-${{ needs.windows.outputs.version }}
+          path: dist
+      - name: Sign the installer for the self-updater
+        env:
+          ALTBASE_UPDATE_KEY: ${{ secrets.ALTBASE_UPDATE_KEY }}
+          VERSION: ${{ needs.windows.outputs.version }}
+        run: |
+          node -e '
+            const crypto = require("crypto"), fs = require("fs");
+            const key = process.env.ALTBASE_UPDATE_KEY;
+            if (!key) { console.log("::error::the ALTBASE_UPDATE_KEY secret is not set: the installer cannot be signed"); process.exit(1); }
+            const name = `Altbase-Setup-${process.env.VERSION}.exe`, exe = `dist/${name}`;
+            const data = Buffer.concat([Buffer.from(name + "\n"), fs.readFileSync(exe)]);
+            const sig = crypto.sign("sha256", data, { key, dsaEncoding: "ieee-p1363" });
+            const hex = fs.readFileSync("src-tauri/src/self_update.rs", "utf8").match(/const PUBLIC_KEY: &str = "([0-9a-f]{128})"/)[1];
+            const xy = Buffer.from(hex, "hex"), b64 = (b) => b.toString("base64url");
+            const pub = crypto.createPublicKey({ key: { kty: "EC", crv: "P-256", x: b64(xy.subarray(0, 32)), y: b64(xy.subarray(32)) }, format: "jwk" });
+            if (!crypto.verify("sha256", data, { key: pub, dsaEncoding: "ieee-p1363" }, sig)) {
+              console.log("::error::ALTBASE_UPDATE_KEY is not the key whose public half is PUBLIC_KEY in self_update.rs: Altbase would refuse this installer");
+              process.exit(1);
+            }
+            fs.writeFileSync(exe + ".sig", sig.toString("base64"));
+            console.log("signed " + exe);
+          '
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: signed
+          path: |
+            dist/Altbase-Setup-${{ needs.windows.outputs.version }}.exe
+            dist/Altbase-Setup-${{ needs.windows.outputs.version }}.exe.sig
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [windows, sign]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: Altbase-Setup-${{ needs.windows.outputs.version }}
+          name: signed
           path: dist
-      - name: Draft release with SHA-256 sums
+      - name: Publish the release
         working-directory: dist
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,9 +127,9 @@ jobs:
           VERSION: ${{ needs.windows.outputs.version }}
         run: |
           sha256sum -- * > SHA256SUMS.txt
-          printf 'Not code-signed: SmartScreen warns on first run (More info > Run anyway).\n\n~~~\n%s\n~~~\n' "$(cat SHA256SUMS.txt)" > ../notes.md
+          printf 'Download **Altbase-Setup-%s.exe** below and run it. Already installed? Altbase updates itself, keeping your accounts.\n\nNot code-signed: Windows SmartScreen warns on first run (More info > Run anyway).\n\n~~~\n%s\n~~~\n' "$VERSION" "$(cat SHA256SUMS.txt)" > ../notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" ./* --clobber
           else
-            gh release create "$TAG" ./* --draft --target "$GITHUB_SHA" --title "Altbase $VERSION" --notes-file ../notes.md
+            gh release create "$TAG" ./* --target "$GITHUB_SHA" --title "Altbase $VERSION" --notes-file ../notes.md --latest
           fi

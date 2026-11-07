@@ -14,6 +14,7 @@ mod memory;
 mod network;
 mod performance;
 mod roblox_api;
+mod self_update;
 mod splash;
 mod storage;
 mod tray;
@@ -51,6 +52,7 @@ pub struct App {
     pub bulk: launcher::bulk::Bulk,
     pub discord: discord::Discord,
     pub update: launcher::update::Updater,
+    pub self_update: self_update::SelfUpdater,
     /// Whether a Public network is connected (`network`).
     pub network: network::Network,
     /// When the shutdown Altbase scheduled is due (Unix ms; `commands::shutdown_schedule`).
@@ -430,6 +432,7 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
         bulk: launcher::bulk::Bulk::new(),
         discord: discord::Discord::new(),
         update: launcher::update::Updater::new(),
+        self_update: self_update::SelfUpdater::new(),
         network: network::Network::new(),
         shutdown: Mutex::new(shutdown),
     });
@@ -446,6 +449,8 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     if let Err(e) = tray::setup(app.handle()) {
         log::warn!("no tray icon: {e}");
     }
+    // Before anything else is started, so a newer Altbase is found as soon as possible.
+    self_update::spawn(app.handle().clone());
     app.manage(splash::Pending::default());
     main_window(app, data_dir, settings.skip_splash).map_err(|e| {
         tr!(
@@ -643,6 +648,9 @@ fn main() {
             commands::target_place,
             commands::roblox_client,
             commands::roblox_install,
+            commands::self_update_status,
+            commands::self_update_check,
+            commands::self_update_install,
             commands::say_greeting,
             commands::memory_lists,
             commands::memory_empty,
@@ -705,6 +713,13 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::DB_FILES, ["altbase.db", "altbase.db-wal", "altbase.db-shm", "altbase.db.key"]);
+    }
 
     fn temp_dir() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("altbase-datadir-{}", uuid::Uuid::new_v4()));

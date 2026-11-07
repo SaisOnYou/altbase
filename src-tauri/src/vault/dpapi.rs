@@ -72,6 +72,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::ENTROPY, b"Altbase/vault/v1");
+    }
+
+    #[test]
     fn dpapi_round_trip() {
         let wrapped = protect(b"data key").unwrap();
         assert_ne!(wrapped.as_slice(), b"data key");

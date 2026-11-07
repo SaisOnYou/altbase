@@ -345,5 +345,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "La réponse de GitHub n'a pas pu être lue.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} est sorti, mais sans installateur signé. Récupère-le sur GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "L'installateur Altbase téléchargé n'a pas été lancé : sa signature n'est pas valide.",
+  "Couldn't reach GitHub ({what}).": "Impossible de joindre GitHub ({what}).",
+  "Altbase's HTTP client couldn't start.": "Le client HTTP de Altbase n'a pas pu démarrer.",
+  "GitHub answered HTTP {status}.": "GitHub a répondu HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub a envoyé plus de {kb} KB.",
+  "Altbase is already being updated.": "Altbase est déjà en cours de mise à jour.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Attends la fin du lancement, du lot ou de la reconnexion auto en cours, puis mets Altbase à jour.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Attends la fin de l'installateur de Roblox, puis mets Altbase à jour.",
+  "Altbase is up to date.": "Altbase est à jour.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "L'installateur Altbase téléchargé n'a pas été lancé : son fichier de signature est mal formé.",
+  "Could not start Altbase's installer: {why}": "Impossible de démarrer l'installateur de Altbase : {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

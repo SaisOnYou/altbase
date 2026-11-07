@@ -345,5 +345,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "GitHub'ın yanıtı okunamadı.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} çıktı, ancak imzalı bir yükleyicisi yok. GitHub Releases'tan edinin.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "İndirilen Altbase yükleyicisi çalıştırılmadı: imzası doğrulanamadı.",
+  "Couldn't reach GitHub ({what}).": "GitHub'a ulaşılamadı ({what}).",
+  "Altbase's HTTP client couldn't start.": "Altbase'ın HTTP istemcisi başlatılamadı.",
+  "GitHub answered HTTP {status}.": "GitHub HTTP {status} yanıtı verdi.",
+  "GitHub sent more than {kb} KB.": "GitHub {kb} KB'tan fazla veri gönderdi.",
+  "Altbase is already being updated.": "Altbase zaten güncelleniyor.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Devam eden başlatmanın, toplu başlatmanın veya otomatik yeniden katılmanın bitmesini bekleyin, ardından Altbase'ı güncelleyin.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Roblox'un yükleyicisinin bitmesini bekleyin, ardından Altbase'ı güncelleyin.",
+  "Altbase is up to date.": "Altbase güncel.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "İndirilen Altbase yükleyicisi çalıştırılmadı: imza dosyası bozuk.",
+  "Could not start Altbase's installer: {why}": "Altbase'ın yükleyicisi başlatılamadı: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

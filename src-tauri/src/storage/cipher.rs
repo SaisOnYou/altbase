@@ -193,6 +193,13 @@ mod tests {
     use super::*;
     use crate::storage::Db;
 
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::ENTROPY, b"Altbase/db/v1");
+    }
+
     fn tmp() -> PathBuf {
         std::env::temp_dir().join(format!("altbase-cipher-{}", uuid::Uuid::new_v4()))
     }

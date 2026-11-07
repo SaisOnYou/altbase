@@ -1413,5 +1413,12 @@
   "accounts.settings.failed": "Failed: {count} ({why})",
   "accounts.settings.captcha": "Needs a human check on roblox.com: {names}",
   "settings.credits": "Made by {names}",
-  "settings.builtWith": "Built with Claude · local-only, no telemetry"
+  "settings.builtWith": "Built with Claude · local-only, no telemetry",
+  "settings.updateAvailable": "Altbase {version} mevcut.",
+  "settings.selfUpdateHint": "Looks for a newer Altbase on GitHub at start and every hour. While no Roblox client runs it installs by itself and restarts; otherwise it's offered in the island. Every installer's signature is checked first, and your accounts and settings are kept.",
+  "settings.selfUpdate": "Altbase güncellemelerini denetle",
+  "settings.checkNow": "Şimdi denetle",
+  "settings.checking": "Denetleniyor…",
+  "settings.upToDate": "Altbase güncel.",
+  "settings.openReleases": "Sürümler sayfasını aç"
 }

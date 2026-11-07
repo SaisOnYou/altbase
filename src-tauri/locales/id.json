@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "Jawaban GitHub tidak dapat dibaca.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} sudah rilis, tetapi tanpa penginstal bertanda tangan. Unduh dari GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "Penginstal Altbase yang diunduh tidak dijalankan: tanda tangannya tidak lolos pemeriksaan.",
+  "Couldn't reach GitHub ({what}).": "Tidak dapat menjangkau GitHub ({what}).",
+  "Altbase's HTTP client couldn't start.": "Klien HTTP Altbase tidak dapat dimulai.",
+  "GitHub answered HTTP {status}.": "GitHub menjawab HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub mengirim lebih dari {kb} KB.",
+  "Altbase is already being updated.": "Altbase sedang diperbarui.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Tunggu peluncuran, batch, atau gabung ulang otomatis yang sedang berjalan selesai, lalu perbarui Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Tunggu penginstal Roblox selesai, lalu perbarui Altbase.",
+  "Altbase is up to date.": "Altbase sudah versi terbaru.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "Penginstal Altbase yang diunduh tidak dijalankan: file tanda tangannya rusak.",
+  "Could not start Altbase's installer: {why}": "Tidak dapat memulai penginstal Altbase: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

@@ -353,5 +353,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "Не удалось прочитать ответ GitHub.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Вышел Altbase {version}, но без подписанного установщика. Скачайте его с GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "Загруженный установщик Altbase не запущен: его подпись не прошла проверку.",
+  "Couldn't reach GitHub ({what}).": "Не удалось связаться с GitHub ({what}).",
+  "Altbase's HTTP client couldn't start.": "HTTP-клиент Altbase не запустился.",
+  "GitHub answered HTTP {status}.": "GitHub ответил HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub прислал больше {kb} KB.",
+  "Altbase is already being updated.": "Altbase уже обновляется.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Дождитесь завершения текущего запуска, пакета или автоперезахода, затем обновите Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Дождитесь завершения установщика Roblox, затем обновите Altbase.",
+  "Altbase is up to date.": "У вас последняя версия Altbase.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "Загруженный установщик Altbase не запущен: файл подписи повреждён.",
+  "Could not start Altbase's installer: {why}": "Не удалось запустить установщик Altbase: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

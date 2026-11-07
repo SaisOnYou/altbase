@@ -345,5 +345,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "Die Antwort von GitHub konnte nicht gelesen werden.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} ist erschienen, aber ohne signierten Installer. Hol es dir von GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "Der heruntergeladene Altbase-Installer wurde nicht ausgeführt: Seine Signatur ist nicht in Ordnung.",
+  "Couldn't reach GitHub ({what}).": "GitHub ist nicht erreichbar ({what}).",
+  "Altbase's HTTP client couldn't start.": "Der HTTP-Client von Altbase konnte nicht starten.",
+  "GitHub answered HTTP {status}.": "GitHub hat mit HTTP {status} geantwortet.",
+  "GitHub sent more than {kb} KB.": "GitHub hat mehr als {kb} KB gesendet.",
+  "Altbase is already being updated.": "Altbase wird bereits aktualisiert.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Warte, bis der laufende Start, Batch oder Auto-Rejoin fertig ist, und aktualisiere dann Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Warte, bis der Roblox-Installer fertig ist, und aktualisiere dann Altbase.",
+  "Altbase is up to date.": "Altbase ist aktuell.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "Der heruntergeladene Altbase-Installer wurde nicht ausgeführt: Seine Signaturdatei ist fehlerhaft.",
+  "Could not start Altbase's installer: {why}": "Der Altbase-Installer konnte nicht gestartet werden: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

@@ -1362,5 +1362,12 @@
   "accounts.settings.failed": "Failed: {count} ({why})",
   "accounts.settings.captcha": "Needs a human check on roblox.com: {names}",
   "settings.credits": "Made by {names}",
-  "settings.builtWith": "Built with Claude · local-only, no telemetry"
+  "settings.builtWith": "Built with Claude · local-only, no telemetry",
+  "settings.updateAvailable": "มี Altbase {version} แล้ว",
+  "settings.selfUpdateHint": "Looks for a newer Altbase on GitHub at start and every hour. While no Roblox client runs it installs by itself and restarts; otherwise it's offered in the island. Every installer's signature is checked first, and your accounts and settings are kept.",
+  "settings.selfUpdate": "ตรวจหาอัปเดต Altbase",
+  "settings.checkNow": "ตรวจสอบเลย",
+  "settings.checking": "กำลังตรวจสอบ…",
+  "settings.upToDate": "Altbase เป็นเวอร์ชันล่าสุดแล้ว",
+  "settings.openReleases": "เปิดหน้ารีลีส"
 }

@@ -20,6 +20,7 @@ export const qk = {
   crashes: ["crashes"],
   serverHistory: (id: number) => ["serverHistory", id] as const,
   metrics: ["metrics"],
+  appUpdate: ["appUpdate"],
   memory: ["memory"],
   system: ["system"],
   bandwidth: ["bandwidth"],

@@ -39,6 +39,11 @@ Download `Altbase-Setup-x.y.z.exe` from [Releases](../../releases) and run it. I
 without admin rights. Altbase isn't code-signed, so Windows SmartScreen warns the first time:
 *More info → Run anyway*. Needs Windows 10 1809 or later and the WebView2 runtime (Windows 11 has it).
 
+After that, **Altbase updates itself**: it checks this repository's releases every hour and, while no
+Roblox client is running, installs the new version and restarts, keeping your accounts and settings.
+Every update's installer must carry this project's signature, or it isn't run. You can turn this off
+in **Settings → About**.
+
 To build it yourself, see [BUILD.md](BUILD.md).
 
 ## Safety

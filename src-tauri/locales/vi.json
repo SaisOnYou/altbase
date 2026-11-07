@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "Không đọc được phản hồi của GitHub.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Đã có Altbase {version}, nhưng không có trình cài đặt được ký. Hãy tải từ GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "Trình cài đặt Altbase đã tải không được chạy: chữ ký không hợp lệ.",
+  "Couldn't reach GitHub ({what}).": "Không kết nối được GitHub ({what}).",
+  "Altbase's HTTP client couldn't start.": "HTTP client của Altbase không khởi động được.",
+  "GitHub answered HTTP {status}.": "GitHub trả về HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub gửi quá {kb} KB.",
+  "Altbase is already being updated.": "Altbase đang được cập nhật rồi.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Hãy chờ khởi chạy, hàng loạt hoặc tự vào lại đang chạy kết thúc rồi hãy cập nhật Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Hãy chờ trình cài đặt Roblox xong rồi hãy cập nhật Altbase.",
+  "Altbase is up to date.": "Altbase đang là bản mới nhất.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "Trình cài đặt Altbase đã tải không được chạy: tệp chữ ký bị lỗi.",
+  "Could not start Altbase's installer: {why}": "Không thể khởi động trình cài đặt Altbase: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

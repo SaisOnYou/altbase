@@ -338,7 +338,7 @@ async fn check(app: &AppHandle) {
     let c = publish(app);
     let enabled = s.db.settings().inspect_err(|e| log::warn!("auto-update: settings unreadable, skipped: {e}")).is_ok_and(|v| v.auto_update);
     let running = crate::instances::process::roblox_processes().len();
-    if !may_auto_update(enabled, &c, running, s.bulk.any_busy() || s.update.installing()) {
+    if !may_auto_update(enabled, &c, running, s.bulk.any_busy() || s.update.installing() || s.self_update.installing()) {
         return;
     }
     {

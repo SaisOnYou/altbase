@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "อ่านการตอบกลับของ GitHub ไม่ได้",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version} ออกแล้ว แต่ไม่มีตัวติดตั้งที่ลงลายเซ็น ดาวน์โหลดจาก GitHub Releases",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "ไม่ได้เรียกใช้ตัวติดตั้ง Altbase ที่ดาวน์โหลด: ลายเซ็นตรวจสอบไม่ผ่าน",
+  "Couldn't reach GitHub ({what}).": "เชื่อมต่อ GitHub ไม่ได้ ({what})",
+  "Altbase's HTTP client couldn't start.": "ไคลเอนต์ HTTP ของ Altbase เริ่มไม่ได้",
+  "GitHub answered HTTP {status}.": "GitHub ตอบกลับ HTTP {status}",
+  "GitHub sent more than {kb} KB.": "GitHub ส่งข้อมูลเกิน {kb} KB",
+  "Altbase is already being updated.": "กำลังอัปเดต Altbase อยู่แล้ว",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "รอให้การเปิดเล่น การเปิดเป็นชุด หรือการเข้าร่วมใหม่อัตโนมัติที่ทำงานอยู่เสร็จก่อน แล้วค่อยอัปเดต Altbase",
+  "Wait for Roblox's installer to finish, then update Altbase.": "รอให้ตัวติดตั้งของ Roblox ทำงานเสร็จก่อน แล้วค่อยอัปเดต Altbase",
+  "Altbase is up to date.": "Altbase เป็นเวอร์ชันล่าสุดแล้ว",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "ไม่ได้เรียกใช้ตัวติดตั้ง Altbase ที่ดาวน์โหลด: ไฟล์ลายเซ็นผิดรูปแบบ",
+  "Could not start Altbase's installer: {why}": "เริ่มตัวติดตั้งของ Altbase ไม่ได้: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

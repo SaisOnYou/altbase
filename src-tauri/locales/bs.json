@@ -353,5 +353,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "GitHubov odgovor se nije mogao pročitati.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Izašao je Altbase {version}, ali bez potpisanog instalatera. Preuzmite ga s GitHub Releases.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "Preuzeti Altbase instalater nije pokrenut: njegov potpis nije prošao provjeru.",
+  "Couldn't reach GitHub ({what}).": "GitHub nije dostupan ({what}).",
+  "Altbase's HTTP client couldn't start.": "Altbase-ov HTTP klijent se nije mogao pokrenuti.",
+  "GitHub answered HTTP {status}.": "GitHub je odgovorio HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub je poslao više od {kb} KB.",
+  "Altbase is already being updated.": "Altbase se već ažurira.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "Sačekajte da se završi pokretanje, serija ili automatsko ponovno pridruživanje u toku, zatim ažurirajte Altbase.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Sačekajte da Roblox instalater završi, zatim ažurirajte Altbase.",
+  "Altbase is up to date.": "Altbase je ažuran.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "Preuzeti Altbase instalater nije pokrenut: njegova datoteka potpisa je neispravna.",
+  "Could not start Altbase's installer: {why}": "Altbase instalater se nije mogao pokrenuti: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

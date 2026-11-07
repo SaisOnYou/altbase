@@ -131,6 +131,11 @@ discord: DiscordEvents,
  */
 autoUpdate: boolean, 
 /**
+ * Look for a newer Altbase on GitHub at start and every hour (`self_update`); installed by
+ * itself while no client runs, else offered.
+ */
+selfUpdate: boolean, 
+/**
  * Hide each client (without taking the focus) once, when it first reaches a game, unless its
  * account is full quality. A hidden client (`instances::window`) stays live while Home shows
  * it and sleeps otherwise, and comes back from the taskbar or Alt-Tab.

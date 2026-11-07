@@ -337,5 +337,19 @@
   "Paste a group link or its number, like roblox.com/communities/1234567.": "Paste a group link or its number, like roblox.com/communities/1234567.",
   "Pick accounts that are signed in.": "Pick accounts that are signed in.",
   "A display name must be 3 to 20 characters: \"{name}\" isn't.": "A display name must be 3 to 20 characters: \"{name}\" isn't.",
-  "Pick something to change.": "Pick something to change."
+  "Pick something to change.": "Pick something to change.",
+  "GitHub's answer couldn't be read.": "GitHub 응답을 읽을 수 없어요.",
+  "Altbase {version} is out, but without a signed installer. Get it from GitHub Releases.": "Altbase {version}이(가) 나왔지만 서명된 설치 프로그램이 없어요. GitHub Releases에서 받으세요.",
+  "The downloaded Altbase installer was not run: its signature didn't check out.": "다운로드한 Altbase 설치 프로그램을 실행하지 않았어요. 서명 확인에 실패했어요.",
+  "Couldn't reach GitHub ({what}).": "GitHub에 연결할 수 없어요 ({what}).",
+  "Altbase's HTTP client couldn't start.": "Altbase의 HTTP 클라이언트를 시작할 수 없어요.",
+  "GitHub answered HTTP {status}.": "GitHub 응답: HTTP {status}.",
+  "GitHub sent more than {kb} KB.": "GitHub가 {kb} KB를 넘게 보냈어요.",
+  "Altbase is already being updated.": "Altbase를 이미 업데이트하는 중이에요.",
+  "Wait for the running launch, batch or auto-rejoin to finish, then update Altbase.": "진행 중인 실행, 일괄 실행, 자동 재접속이 끝난 뒤 Altbase를 업데이트하세요.",
+  "Wait for Roblox's installer to finish, then update Altbase.": "Roblox 설치 프로그램이 끝난 뒤 Altbase를 업데이트하세요.",
+  "Altbase is up to date.": "Altbase가 최신 버전이에요.",
+  "The downloaded Altbase installer was not run: its signature file is malformed.": "다운로드한 Altbase 설치 프로그램을 실행하지 않았어요. 서명 파일 형식이 잘못됐어요.",
+  "Could not start Altbase's installer: {why}": "Altbase 설치 프로그램을 시작할 수 없어요: {why}",
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
 }

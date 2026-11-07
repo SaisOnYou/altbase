@@ -1464,5 +1464,12 @@
   "accounts.settings.failed": "Failed: {count} ({why})",
   "accounts.settings.captcha": "Needs a human check on roblox.com: {names}",
   "settings.credits": "Made by {names}",
-  "settings.builtWith": "Built with Claude · local-only, no telemetry"
+  "settings.builtWith": "Built with Claude · local-only, no telemetry",
+  "settings.updateAvailable": "Dostupan je Altbase {version}.",
+  "settings.selfUpdateHint": "Looks for a newer Altbase on GitHub at start and every hour. While no Roblox client runs it installs by itself and restarts; otherwise it's offered in the island. Every installer's signature is checked first, and your accounts and settings are kept.",
+  "settings.selfUpdate": "Provjeravaj ažuriranja Altbase-a",
+  "settings.checkNow": "Provjeri sada",
+  "settings.checking": "Provjera…",
+  "settings.upToDate": "Altbase je ažuran.",
+  "settings.openReleases": "Otvori stranicu izdanja"
 }

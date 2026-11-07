@@ -274,6 +274,9 @@ pub struct Settings {
     /// Install a new Roblox version on its own once no client runs and no launch or batch does
     /// (never over a bootstrapper; the installer is signature-checked as always).
     pub auto_update: bool,
+    /// Look for a newer Altbase on GitHub at start and every hour (`self_update`); installed by
+    /// itself while no client runs, else offered.
+    pub self_update: bool,
     /// Hide each client (without taking the focus) once, when it first reaches a game, unless its
     /// account is full quality. A hidden client (`instances::window`) stays live while Home shows
     /// it and sleeps otherwise, and comes back from the taskbar or Alt-Tab.
@@ -495,6 +498,7 @@ impl Default for Settings {
             anti_afk: AntiAfk::default(),
             discord: DiscordEvents::default(),
             auto_update: false,
+            self_update: true,
             minimize_on_launch: false,
 panic_hotkey: String::new(),
             clean_logs: false,
@@ -577,6 +581,8 @@ pub struct SettingsPatch {
     pub discord: Option<DiscordEvents>,
     #[ts(optional)]
     pub auto_update: Option<bool>,
+    #[ts(optional)]
+    pub self_update: Option<bool>,
     #[ts(optional)]
     pub minimize_on_launch: Option<bool>,
     #[ts(optional)]
@@ -1361,6 +1367,16 @@ pub struct RobloxClient {
     pub latest: Option<String>,
     /// Both versions are known and differ (`launcher::update::outdated`).
     pub outdated: bool,
+}
+
+/// Altbase's own version and a newer published release, once found (`self_update`).
+#[derive(Serialize, TS, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AppUpdate {
+    pub current: String,
+    /// The newer version (`x.y.z`); None when up to date or not checked yet.
+    pub available: Option<String>,
 }
 
 /// Where `roblox_install` is (`roblox://install`).

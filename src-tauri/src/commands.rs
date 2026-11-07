@@ -1379,6 +1379,25 @@ pub async fn memory_trim_clients(s: State<'_, App>) -> Result<u32> {
     .await
 }
 
+/// Altbase's version and the newer release the last check found (no network).
+#[tauri::command]
+pub fn self_update_status(s: State<'_, App>) -> AppUpdate {
+    crate::self_update::status(&s)
+}
+
+/// Asks GitHub for a newer Altbase now (Check now), whatever `settings.self_update` says.
+#[tauri::command]
+pub async fn self_update_check(app: AppHandle) -> Result<AppUpdate> {
+    crate::self_update::check(&app).await
+}
+
+/// Downloads the newer Altbase's installer, checks its signature, runs it and quits
+/// (`self_update::install`; the installer starts Altbase again, accounts and settings kept).
+#[tauri::command]
+pub async fn self_update_install(app: AppHandle) -> Result<()> {
+    crate::self_update::install(&app).await
+}
+
 /// Where the data lives now (see `main::data_dir`).
 #[tauri::command]
 pub fn data_dir_info(s: State<'_, App>) -> DataDir {
@@ -3189,6 +3208,8 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         v.discord = d;
     }
     if let Some(a) = patch.auto_update { v.auto_update = a }
+    let self_update = patch.self_update.filter(|&u| u != v.self_update);
+    if let Some(u) = self_update { v.self_update = u }
     if let Some(c) = patch.clean_logs { v.clean_logs = c }
     if let Some(d) = patch.launch_delay_ms {
         if !(2_000..=60_000).contains(&d) {
@@ -3232,6 +3253,9 @@ pub fn settings_set(app: AppHandle, s: State<'_, App>, patch: SettingsPatch) -> 
         crate::i18n::set(&v.language);
         crate::tray::refresh(&app);
     }
+    if let Some(u) = self_update {
+        crate::self_update::switched(&app, u);
+    }
     Ok(v)
 }
 
@@ -3245,6 +3269,13 @@ pub fn network_status(s: State<'_, App>) -> NetworkStatus {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn stored_formats_are_frozen() {
+        // Frozen: every install's saved accounts are sealed under these. Changing one makes them
+        // unreadable after an update.
+        assert_eq!(super::FAVOURITE_AAD, b"altbase.favourite");
+    }
     #[test]
     fn display_names_fill_in_the_number_and_keep_to_roblox_limits() {
         assert_eq!(super::display_name_for("Farm {n}", 7).unwrap(), "Farm 7");

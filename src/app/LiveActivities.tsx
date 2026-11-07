@@ -10,6 +10,7 @@ import { LaunchProgress } from "../features/launch/LaunchProgress";
 import { isRunning, STATES } from "../features/launch/Running";
 import { jumpTo } from "../features/settings/jump";
 import { usePublicBlock } from "../features/settings/PublicNetworkBanner";
+import { UpdateText, useUpdateInstall, useUpdateOffer } from "../features/settings/UpdateBanner";
 import { announce } from "../ui/a11y";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
@@ -143,25 +144,45 @@ function RunningCapsule({ accounts }: { accounts: AccountSummary[] }) {
   );
 }
 
-/** The public-network block, when it applies. */
+/** An update on offer, or the public-network block: one slot, the update first. */
 function NoticeCapsule({ settings }: { settings: Settings }) {
+  const version = useUpdateOffer();
+  const install = useUpdateInstall(version);
   const blocked = usePublicBlock(settings);
-  const name = t("settings.publicNow");
+  // Update now asks first while clients run (a modal, which needs the sheet closed); otherwise the
+  // sheet stays and shows the download.
+  const asks = (useInstances().data ?? []).some(isRunning);
+  const kind = version ? "update" : blocked ? "network" : null;
+  // Named for the state it shows; the verbs are the sheet's buttons.
+  const name = kind === "update" ? (install.busy ? t("settings.updateDownloading") : t("settings.updateAvailable", { version: version ?? "" })) : t("settings.publicNow");
   return (
-    <Capsule
-      show={blocked}
-      label={name}
-      sheetLabel={name}
-      sheet={(close) => (
-        <div className="flex flex-col gap-3 p-4">
-          <p>{t("settings.publicBannerBlocked")}</p>
-          <div>
-            <Button size="md" icon="shield" onClick={() => (close(), jumpTo("publicNetworks"))}>{t("app.nav.settings")}</Button>
-          </div>
-        </div>
-      )}
-    >
-      <Icon name="globe" size={15} />
-    </Capsule>
+    <>
+      <Capsule
+        show={kind !== null}
+        label={name}
+        sheetLabel={name}
+        sheet={(close) =>
+          kind === "update" && version ? (
+            <div className="flex flex-col gap-3 p-4">
+              <UpdateText version={version} busy={install.busy} />
+              <div className="flex gap-2">
+                <Button variant="primary" size="md" icon="download" busy={install.busy} aria-disabled={install.busy || undefined} onClick={() => install.busy || (asks && close(), install.start())}>{t("settings.updateNow")}</Button>
+                <Button size="md" disabled={install.busy} onClick={() => (close(), install.later())}>{t("settings.updateLater")}</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 p-4">
+              <p>{t("settings.publicBannerBlocked")}</p>
+              <div>
+                <Button size="md" icon="shield" onClick={() => (close(), jumpTo("publicNetworks"))}>{t("app.nav.settings")}</Button>
+              </div>
+            </div>
+          )
+        }
+      >
+        {kind === "update" && install.busy ? <Icon name="refresh" size={15} className="spin" /> : <Icon name={kind === "update" ? "download" : "globe"} size={15} />}
+      </Capsule>
+      {install.dialog}
+    </>
   );
 }
