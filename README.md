@@ -6,11 +6,17 @@
 
 A local-only Roblox account manager and multi-client launcher for Windows.
 
+<br>
+
+<a href="https://github.com/SaisOnYou/altbase/releases/latest/download/Altbase-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-Altbase--Setup.exe-c4694a?style=for-the-badge&logo=windows&logoColor=white" alt="Download Altbase for Windows" height="44"></a>
+
+<sub>Latest version · Windows 10 and 11 · free · <a href="../../releases">all releases</a></sub>
+
 </div>
 
 Altbase keeps your Roblox accounts signed in, launches any of them into any game, and runs several
 Roblox windows side by side. Everything stays on your PC: it talks to Roblox, and to Discord only if
-you add your own webhook for alerts. No account, no telemetry, no update server.
+you add your own webhook for alerts. No account and no telemetry; updates come straight from this GitHub repository.
 
 ## Features
 
@@ -35,9 +41,13 @@ you add your own webhook for alerts. No account, no telemetry, no update server.
 
 ## Install
 
-Download `Altbase-Setup-x.y.z.exe` from [Releases](../../releases) and run it. It installs per user,
-without admin rights. Altbase isn't code-signed, so Windows SmartScreen warns the first time:
-*More info → Run anyway*. Needs Windows 10 1809 or later and the WebView2 runtime (Windows 11 has it).
+1. **[Download Altbase-Setup.exe](https://github.com/SaisOnYou/altbase/releases/latest/download/Altbase-Setup.exe)**. It's always the newest version.
+2. Run it. Windows shows a blue "Windows protected your PC" box because the installer isn't
+   code-signed: click **More info → Run anyway**. It installs just for you, no admin rights needed.
+3. Altbase opens. Add your accounts under **Accounts → Add account**.
+
+Needs Windows 10 (1809 or later) or Windows 11, with the WebView2 runtime (Windows 11 has it; the
+installer offers it if it's missing).
 
 After that, **Altbase updates itself**: it checks this repository's releases every hour and, while no
 Roblox client is running, installs the new version and restarts, keeping your accounts and settings.

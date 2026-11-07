@@ -126,8 +126,12 @@ jobs:
           TAG: ${{ needs.windows.outputs.tag }}
           VERSION: ${{ needs.windows.outputs.version }}
         run: |
+          # The same installer under a fixed name, so releases/latest/download/Altbase-Setup.exe
+          # (the README's Download button) always gets the newest. The updater only reads the
+          # versioned one and its .sig.
+          cp "Altbase-Setup-$VERSION.exe" Altbase-Setup.exe
           sha256sum -- * > SHA256SUMS.txt
-          printf 'Download **Altbase-Setup-%s.exe** below and run it. Already installed? Altbase updates itself, keeping your accounts.\n\nNot code-signed: Windows SmartScreen warns on first run (More info > Run anyway).\n\n~~~\n%s\n~~~\n' "$VERSION" "$(cat SHA256SUMS.txt)" > ../notes.md
+          printf 'Download **Altbase-Setup.exe** below and run it (version %s). Already installed? Altbase updates itself, keeping your accounts.\n\nNot code-signed: Windows SmartScreen warns on first run (More info > Run anyway).\n\n~~~\n%s\n~~~\n' "$VERSION" "$(cat SHA256SUMS.txt)" > ../notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" ./* --clobber
           else
