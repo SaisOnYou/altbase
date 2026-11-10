@@ -10,6 +10,7 @@ mod error;
 mod instances;
 mod launcher;
 mod model;
+mod autostart;
 mod memory;
 mod network;
 mod performance;
@@ -462,6 +463,7 @@ fn init(app: &TauriApp, data_dir: &Path, moved_from: Option<&Path>) -> std::resu
     spawn_auto_lock(app.handle().clone());
     instances::Tracker::spawn(app.handle().clone());
     instances::afk::spawn(app.handle().clone());
+    memory::spawn_pressure(app.handle().clone());
     network::spawn(app.handle().clone());
     launcher::flags::restore();
     launcher::client_settings::spawn(app.handle().clone());
@@ -652,6 +654,8 @@ fn main() {
             commands::self_update_check,
             commands::self_update_install,
             commands::say_greeting,
+            commands::autostart_get,
+            commands::autostart_set,
             commands::memory_lists,
             commands::memory_empty,
             commands::memory_trim_clients,

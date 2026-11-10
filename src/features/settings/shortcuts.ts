@@ -17,6 +17,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   go("discord", "settings.shortcut.discord"),
   go("debug", "settings.shortcut.debug"),
   go("performance", "settings.shortcut.performance"),
+  { id: "palette", label: "palette.title", combo: "Ctrl+K" },
   { id: "add", label: "settings.shortcut.add", combo: "Ctrl+N" },
   { id: "find", label: "settings.shortcut.filter", combo: "Ctrl+F" },
   { id: "selectAll", label: "settings.shortcut.selectAll", combo: "Ctrl+A" },

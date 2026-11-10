@@ -99,10 +99,31 @@ const bulk = () => queryClient.getQueryData<BulkProgress | null>(qk.bulk);
 
 type Job = { account: AccountSummary; where: Where; fpsCap?: number | null };
 
+/** Why the launch guard (Performance) refuses `adding` more clients (pure); null when it lets them.
+ * `running`: clients open now; `freeMb`: the PC's free memory, null when it couldn't be read (which
+ * never blocks). */
+export function guardReason(s: Pick<Settings, "maxClients" | "minFreeMemMb">, running: number, adding: number, freeMb: number | null): string | null {
+  if (s.maxClients > 0 && running + adding > s.maxClients) return t("launch.guard.max", { max: fmtNum(s.maxClients), running: fmtNum(running) });
+  if (s.minFreeMemMb > 0 && freeMb !== null && freeMb < s.minFreeMemMb) return t("launch.guard.memory", { free: fmtNum(Math.round(freeMb)), want: fmtNum(s.minFreeMemMb) });
+  return null;
+}
+
+/** The guard for a launch starting now. */
+async function guard(adding: number): Promise<string | null> {
+  const s = queryClient.getQueryData<Settings>(qk.settings);
+  if (!s || (!s.maxClients && !s.minFreeMemMb)) return null;
+  const running = (queryClient.getQueryData<Instance[]>(qk.instances) ?? []).filter((i) => i.state !== "exited").length;
+  const usage = s.minFreeMemMb > 0 ? await api.systemUsage().catch(() => null) : null;
+  return guardReason(s, running, adding, usage ? usage.memTotalMb - usage.memUsedMb : null);
+}
+
 /** Launches one after another, each with its own target. A refusal stops the rest, and so do a
  * cancelled launch, a lock, a batch that started meanwhile (the tray starts them) and Cancel. */
 async function runLocal(jobs: Job[]) {
   if (state.step !== null || !jobs.length) return;
+  const why = await guard(jobs.length);
+  if (why) return void toast(why, "error");
+  if (state.step !== null) return;
   const g = gen;
   const current = () => g === gen;
   const step = (s: string | null) => current() && set({ step: s });
@@ -185,6 +206,9 @@ export const launchEach = (list: Job[]) => runLocal(list);
  * The launch delay is read now, so one committed by this click's blur counts. */
 export async function launchSame(accounts: AccountSummary[], where: Where, opts: { sameServer?: SameServer; fpsCap?: number | null } = {}) {
   if (state.step !== null || !accounts.length) return;
+  const why = await guard(accounts.length);
+  if (why) return void toast(why, "error");
+  if (state.step !== null) return;
   const g = gen;
   const step = (s: string | null) => g === gen && set({ step: s });
   step(t("launch.step.batch"));

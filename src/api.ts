@@ -296,6 +296,10 @@ export const api = {
   selfUpdateInstall: () => invoke<void>("self_update_install"),
   /** The startup greeting, spoken by Windows; never waits for it. */
   sayGreeting: () => invoke<void>("say_greeting"),
+  /** Whether Windows starts Altbase at sign-in. */
+  autostartGet: () => invoke<boolean>("autostart_get"),
+  /** Turns starting with Windows on or off; what it is afterwards. */
+  autostartSet: (on: boolean) => invoke<boolean>("autostart_set", { on }),
   /** Physical memory by list, like RAMMap's Use Counts. */
   memoryLists: () => invoke<MemoryLists>("memory_lists"),
   /** RAMMap's Empty commands; Windows asks for administrator permission each time. */

@@ -1,7 +1,7 @@
 {
   "name": "altbase",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.1.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -19,6 +19,7 @@
     "@fontsource-variable/geist": "^5.3.0",
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/source-serif-4": "^5.3.1",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
     "@tanstack/react-query": "^5.104.5",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-clipboard-manager": "^2.5.0",

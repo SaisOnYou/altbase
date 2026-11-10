@@ -15,6 +15,7 @@ import { DiscordView } from "../features/discord/DiscordView";
 import { LaunchFlight } from "../features/launch/LaunchButton";
 import { lastLaunchAccount } from "../features/launch/launchQueue";
 import { LaunchView } from "../features/launch/LaunchView";
+import { useStartPlay } from "../features/launch/startPlay";
 import { isLive } from "../features/launch/Running";
 import { draftFor, EMPTY_DRAFT, type Draft } from "../features/launch/target";
 import { MonitorView } from "../features/monitor/MonitorView";
@@ -30,10 +31,13 @@ import { Island } from "../ui/island/Island";
 import type { IslandLeaf, IslandModel } from "../ui/island/model";
 import { markViewEntering } from "../ui/motion";
 import { Divider, usePanelWidth } from "../ui/Resizer";
+import { CommandPalette } from "./CommandPalette";
 import { LiveActivities } from "./LiveActivities";
 import { MAIN_SECTIONS, requestNavigation, SECTION_ICON, SECTION_VIEW, SHORTCUT_VIEW, shortcutFor, TOOL_SECTIONS, useNavigationRequests, VIEW_NAME, type Section, type View } from "./navigation";
 
 const MAIN = ".stage main";
+/** Asks the shell to open the command palette (the title bar's search button). */
+export const PALETTE_EVENT = "altbase:palette";
 
 /** Focuses the first match and says whether there was one: a view's <main> becomes focusable for
  * it, and a field's text is selected. */
@@ -67,10 +71,12 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
   const [sameServer, setSameServer] = useState<SameServer>("off");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const homeTabs = useHomeTabs(accounts.data);
+  useStartPlay(accounts.data);
   const [sectionOrder, setSectionOrder] = useSectionOrder();
   // The game the Servers view shows.
   const [serversPlace, setServersPlace] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const [palette, setPalette] = useState(false);
   const [addOn, setAddOn] = useState<AddTab>("login");
   const phase = useSplashPhase();
   // What takes the focus once that view is on screen: its <main> (a shortcut), or a field. Tied to
@@ -168,6 +174,9 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         if (to === "servers") openServers({ focus: MAIN });
         else go(to, { focus: MAIN });
+      } else if (k === "k") {
+        e.preventDefault();
+        setPalette(true);
       } else if (k === "n") {
         e.preventDefault();
         openAdd();
@@ -180,6 +189,13 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  // The title bar's search button asks for the palette.
+  useEffect(() => {
+    const open = () => setPalette(true);
+    window.addEventListener(PALETTE_EVENT, open);
+    return () => window.removeEventListener(PALETTE_EVENT, open);
+  }, []);
 
   const failed = accounts.error ?? groups.error;
   if (failed)
@@ -257,6 +273,19 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
       {islandSlot &&
         phase !== "play" &&
         createPortal(<Island model={model} live={<LiveActivities accounts={accounts.data} settings={settings} onPick={launchAs} />} />, islandSlot)}
+      <CommandPalette
+        open={palette}
+        onClose={() => setPalette(false)}
+        accounts={accounts.data}
+        onAdd={() => openAdd()}
+        onPlayAs={(id) => launchAs([id])}
+        onOpenAccount={(id) => {
+          setGroup(null);
+          setSelected(id);
+          go("accounts");
+        }}
+        onPickFavourite={pickFavourite}
+      />
       {/* Where a launch button's pill flies from into the island; outlives the view that launched. */}
       <LaunchFlight />
       {side && (

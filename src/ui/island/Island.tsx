@@ -4,6 +4,7 @@ import { Sortable, type DragProps } from "../../features/dashboard/Sortable";
 import { isRtl, t } from "../../i18n";
 import { rovingKeys } from "../a11y";
 import { Icon } from "../Icon";
+import { usePrefs } from "../prefs";
 import { IconSwap, Morph, prefersReducedMotion, SPRING, staggerDelay, Swap, TWEEN, useLiquid, useReducedMotionFlag } from "../motion";
 import type { Box } from "../motion/liquid";
 import type { IslandGroup, IslandLeaf, IslandModel } from "./model";
@@ -173,7 +174,24 @@ const enterProps = (i: number | null) =>
 /** A tile's name with the numbers it shows (its count, its badge): those are aria-hidden. */
 const named = (leaf: IslandLeaf) => [leaf.label, leaf.count, leaf.badge || undefined].filter((x) => x !== undefined).join(", ");
 
+/** True while the window is wide enough for every tab to wear its name. */
+function useRoomForNames() {
+  const [wide, setWide] = useState(() => window.matchMedia(NAMES_FROM).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(NAMES_FROM);
+    const on = () => setWide(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
+const NAMES_FROM = "(min-width: 1180px)";
+
 function Item({ leaf, drag, enter }: { leaf: IslandLeaf; drag: DragProps; enter: number | null }) {
+  // Settings > Accessibility > Tab names: every tab named while there is room, else only the current.
+  const wants = usePrefs().navLabels;
+  const room = useRoomForNames();
+  const named_ = wants && room;
   return (
     <motion.button
       type="button"
@@ -182,7 +200,7 @@ function Item({ leaf, drag, enter }: { leaf: IslandLeaf; drag: DragProps; enter:
       data-ghost
       aria-current={leaf.current ? "page" : undefined}
       aria-label={named(leaf)}
-      data-tip={leaf.current ? undefined : leaf.label}
+      data-tip={leaf.current || named_ ? undefined : leaf.label}
       data-tip-kbd={leaf.current ? undefined : leaf.shortcut}
       tabIndex={-1}
       onClick={leaf.onSelect}
@@ -190,7 +208,7 @@ function Item({ leaf, drag, enter }: { leaf: IslandLeaf; drag: DragProps; enter:
       {...(drag as object)}
     >
       <Icon name={leaf.icon} />
-      <Label shown={leaf.current}>
+      <Label shown={leaf.current || named_}>
         {leaf.label}
         {leaf.count !== undefined && <span className="island-count ms-1.5">{leaf.count}</span>}
       </Label>

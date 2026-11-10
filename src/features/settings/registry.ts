@@ -42,6 +42,13 @@ export type Field =
   | "local:greeting"
   | "local:streamer"
   | "local:motion"
+  | "local:startPlay"
+  | "local:textSize"
+  | "local:contrast"
+  | "local:readableFont"
+  | "local:boldFocus"
+  | "local:navLabels"
+  | "local:underlineLinks"
   | "local:previewFps";
 
 /** `unit` names the number for screen readers; `short` is the suffix on screen. */
@@ -97,6 +104,7 @@ const appearance = { view: "settings", area: "appearance" } as const;
 const security = { view: "settings", area: "security" } as const;
 const data = { view: "settings", area: "data" } as const;
 const about = { view: "settings", area: "about" } as const;
+const accessibility = { view: "settings", area: "accessibility" } as const;
 const master = (c: Ctx) => c.vault.mode === "master";
 
 /** Settings' own rows, in screen order (areas.ts groups them). */
@@ -159,9 +167,17 @@ const SETTINGS_ENTRIES: readonly Entry[] = [
   { id: "greeting", place: appearance, label: "settings.greeting", hint: "settings.greetingHint", field: "local:greeting", control: CUSTOM, aliases: ["voice", "startup", "sound", "claude"] },
   { id: "sounds", place: appearance, label: "settings.soundEffects", hint: "settings.soundHint", field: "local:sounds", control: CUSTOM, aliases: ["audio", "volume", "sfx"] },
   {
-    id: "motion", place: appearance, label: "settings.motion", field: "local:motion", control: CUSTOM, aliases: ["animation", "animations", "movement", "reduced"],
+    id: "motion", place: accessibility, label: "settings.motion", field: "local:motion", control: CUSTOM, aliases: ["animation", "animations", "movement", "reduced"],
     hint: () => ({ on: "settings.motionHintOn", reduced: "settings.motionHintReduced", off: "settings.motionHintOff" } as const)[motionPreference()],
   },
+  { id: "textSize", place: accessibility, label: "settings.textSize", hint: "settings.textSizeHint", field: "local:textSize", control: CUSTOM, aliases: ["zoom", "font size", "bigger", "larger", "scale", "small"] },
+  { id: "contrast", place: accessibility, label: "settings.contrast", hint: "settings.contrastHint", field: "local:contrast", control: CUSTOM, aliases: ["high contrast", "darker", "readable", "vision"] },
+  { id: "readableFont", place: accessibility, label: "settings.readableFont", hint: "settings.readableFontHint", field: "local:readableFont", control: CUSTOM, aliases: ["font", "dyslexia", "hyperlegible", "typeface", "legible"] },
+  { id: "boldFocus", place: accessibility, label: "settings.boldFocus", hint: "settings.boldFocusHint", field: "local:boldFocus", control: CUSTOM, aliases: ["keyboard", "focus ring", "outline", "tab key"] },
+  { id: "navLabels", place: accessibility, label: "settings.navLabels", hint: "settings.navLabelsHint", field: "local:navLabels", control: CUSTOM, aliases: ["tabs", "names", "labels", "icons", "island"] },
+  { id: "underlineLinks", place: accessibility, label: "settings.underlineLinks", hint: "settings.underlineLinksHint", field: "local:underlineLinks", control: CUSTOM, aliases: ["links", "underline"] },
+  { id: "startPlay", place: launching, label: "settings.startPlay", hint: "settings.startPlayShort", more: "settings.startPlayHint", field: "local:startPlay", control: CUSTOM, aliases: ["startup", "auto launch", "boot", "favourite", "unattended"] },
+  { id: "autostart", place: appearance, label: "settings.autostart", hint: "settings.autostartHint", control: CUSTOM, aliases: ["startup", "boot", "login", "sign in", "windows", "run"] },
   { id: "closeToTray", place: appearance, label: "settings.closeToTray", hint: "settings.closeToTrayHint", field: "closeToTray", control: SWITCH, aliases: ["minimize", "hide"] },
   { id: "skipSplash", place: appearance, label: "settings.skipSplash", hint: "settings.skipSplashHint", field: "skipSplash", control: SWITCH, aliases: ["intro", "startup", "animation"] },
 

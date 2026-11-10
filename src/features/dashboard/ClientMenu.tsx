@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { api, type AccountSummary, type Instance, type Limits, type WindowShow } from "../../api";
+import { api, type AccountSummary, type GameServer, type Instance, type Limits, type WindowShow } from "../../api";
 import { useInstances, useSettings } from "../../data";
 import { isRtl, t } from "../../i18n";
 import { menuKeys } from "../../ui/menu";
@@ -18,6 +18,13 @@ export type MenuAt = { inst: Instance; hidden: boolean; x: number; y: number; fr
 /** Keyed by pid too: a close that reached only a bootstrapper ends with the client adopted under a
  * new pid, which can then be closed again. */
 export const closeKey = (i: Instance) => `${i.id}:${i.pid}`;
+
+/** The server a hop goes to (pure): one with a free slot that isn't `current`, picked by `roll`
+ * (0..1) so several accounts hopping at once don't all land in the same one. Null: none to go to. */
+export function pickHop(servers: GameServer[], current: string | null, roll: number): GameServer | null {
+  const open = servers.filter((sv) => sv.id !== current && sv.playing < sv.maxPlayers);
+  return open.length ? open[Math.min(open.length - 1, Math.floor(roll * open.length))] : null;
+}
 
 /** A card's menu: a popover, so Esc and a click outside close it; arrows move. Placed by hand, right
  * after it shows, so it only fades and slides in (a scale would throw off that measure). */
@@ -76,6 +83,19 @@ export function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onC
     api.instanceMicro(i.id, !i.micro).then(([w, h]) => {
       if (!i.micro && (w > tiny.w || h > tiny.h)) toast(t("dashboard.microKept", { w, h }));
     }, toastError);
+  /** Server hop: the same game, another public server with room (never the one it is in). The
+   * launch replaces this client, as Play again does. */
+  const hop = async () => {
+    if (!i || !account || i.placeId === null) return;
+    try {
+      const page = await api.serversList(i.placeId, "occupancyDesc", true, 25, undefined, account.id);
+      const next = pickHop(page.servers, i.jobId, Math.random());
+      if (!next) return void toast(t("dashboard.hopNone"));
+      void launchOne(account, { kind: "server", placeId: i.placeId, jobId: next.id }, i.fpsCap);
+    } catch (e) {
+      toastError(e);
+    }
+  };
   const trim = () => i && api.instanceTrim(i.id).then(([before, after]) => toast(t("dashboard.trimmedFrom", { before: mb(before), after: mb(after) })), toastError);
 
   return (
@@ -104,6 +124,9 @@ export function ClientMenu({ at, account, onClose, afkOn, closing, onLimits, onC
           <MenuItem icon="grid" onSelect={() => void micro()}>{i.micro ? t("dashboard.normalSize") : t("dashboard.microWindow", tiny)}</MenuItem>
           <MenuSeparator />
           <MenuItem icon="refresh" onSelect={() => void trim()}>{t("dashboard.trimMemory")}</MenuItem>
+          {account && i.placeId !== null && i.state !== "exited" && (
+            <MenuItem icon="servers" disabled={step !== null} onSelect={() => void hop()}>{t("dashboard.hop")}</MenuItem>
+          )}
           <div role="group" aria-label={t("dashboard.cpuLimit")} className="home-menu-caps">
             <span className="flex-1 min-w-0 truncate">{t("dashboard.cpuLimit")}</span>
             {CAPS.map((c) => (

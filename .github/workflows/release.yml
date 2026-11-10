@@ -56,6 +56,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: stable
+      # A release installs itself on every PC within the hour, so it must pass the tests first.
+      - name: Tests must pass before a release
+        if: github.ref_type == 'tag' || inputs.release
+        run: |
+          npm ci
+          npm run build
+          cd src-tauri
+          cargo test --locked
       - name: Inno Setup 6.6+
         run: choco upgrade innosetup --no-progress -y
       - run: powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1

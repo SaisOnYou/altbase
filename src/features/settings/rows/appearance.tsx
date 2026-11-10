@@ -3,16 +3,18 @@ import { motion } from "motion/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { open as openFile } from "@tauri-apps/plugin-dialog";
 import { api } from "../../../api";
-import { qk } from "../../../data";
+import { qk, useFavourites } from "../../../data";
 import { t, type Key } from "../../../i18n";
 import { rovingKeys } from "../../../ui/a11y";
 import { Button } from "../../../ui/Button";
 import { Segmented, Switch } from "../../../ui/controls";
+import { Select } from "../../../ui/Field";
 import { Icon } from "../../../ui/Icon";
 import { Collapse, lid, Morph, setMotionPreference, SPRING, Swap, useMotionPreference } from "../../../ui/motion";
 import { playSound, previewSound, setSoundPreferences, useSoundPreferences } from "../../../ui/sounds";
 import { sayGreeting, setGreeting, useGreeting } from "../../../ui/greeting";
 import { setStreamer, useStreamer } from "../../../ui/streamer";
+import { setStartFavourite, useStartFavourite } from "../../launch/startPlay";
 import { useRow } from "../kit/rowError";
 import { SettingRow } from "../kit/SettingRow";
 
@@ -229,3 +231,54 @@ export function StreamerRow() {
     </SettingRow>
   );
 }
+
+/** Windows' own startup list (the registry keeps it, not Settings): read when the row shows. */
+function Autostart() {
+  const row = useRow();
+  const qc = useQueryClient();
+  const on = useQuery({ queryKey: qk.autostart, queryFn: api.autostartGet, staleTime: 0 });
+  return (
+    <Switch
+      label={t("settings.autostart")}
+      checked={on.data ?? false}
+      disabled={on.data === undefined}
+      onChange={(next) => void api.autostartSet(next).then((now) => qc.setQueryData(qk.autostart, now), row.fail)}
+      describedBy={row.describedBy}
+    />
+  );
+}
+
+export function AutostartRow() {
+  return (
+    <SettingRow id="autostart">
+      <Autostart />
+    </SettingRow>
+  );
+}
+
+/** Play at start: one favourite, or none. This PC's own choice (features/launch/startPlay.ts). */
+function StartPlay() {
+  const row = useRow();
+  const favs = useFavourites().data ?? [];
+  const id = useStartFavourite();
+  const known = id !== null && favs.some((f) => f.id === id);
+  return (
+    <Select
+      aria-label={t("settings.startPlay")}
+      aria-describedby={row.describedBy}
+      className="min-w-[200px]"
+      value={known ? String(id) : ""}
+      onChange={(v) => setStartFavourite(v ? Number(v) : null)}
+      options={[{ value: "", label: t("settings.startPlayOff") }, ...favs.map((f) => ({ value: String(f.id), label: f.name }))]}
+    />
+  );
+}
+
+export function StartPlayRow() {
+  return (
+    <SettingRow id="startPlay">
+      <StartPlay />
+    </SettingRow>
+  );
+}
+

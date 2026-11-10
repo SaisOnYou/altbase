@@ -358,3 +358,86 @@
     white-space: nowrap;
   }
 }
+
+/* The command palette (app/CommandPalette.tsx): a field over a list, near the top of the window. */
+@layer components {
+  .dlg.palette {
+    width: min(640px, calc(100vw - 32px));
+    margin-top: 12vh;
+    overflow: hidden;
+  }
+  .palette-body {
+    display: flex;
+    flex-direction: column;
+    max-height: min(560px, 76vh);
+  }
+  .palette-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .palette-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: none;
+    color: var(--fg);
+    font-size: 16px;
+  }
+  .palette-field input::placeholder {
+    color: var(--fg-3);
+  }
+  .palette-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px;
+    scrollbar-width: thin;
+  }
+  .palette-group {
+    padding: 10px 10px 4px;
+    color: var(--fg-3);
+    font-size: var(--fs-meta);
+    font-weight: 600;
+  }
+  .palette-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    cursor: default;
+  }
+  .palette-item[aria-selected="true"] {
+    background: var(--sel);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .palette-hint {
+    flex: none;
+    color: var(--fg-3);
+    font-size: var(--fs-meta);
+  }
+  .palette-empty {
+    padding: 24px 12px;
+    color: var(--fg-2);
+    text-align: center;
+  }
+  .palette-foot {
+    display: flex;
+    gap: 16px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--line);
+    color: var(--fg-3);
+    font-size: var(--fs-meta);
+  }
+  .palette-foot span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+

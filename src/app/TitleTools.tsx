@@ -18,6 +18,7 @@ export function TitleTools({ dark, onRefresh, onToggleTheme, sideTabs, onToggleT
 }) {
   return (
     <div className="title-tools">
+      {onRefresh && <IconButton icon="search" label={t("palette.title")} shortcut="Ctrl+K" onClick={() => window.dispatchEvent(new Event("altbase:palette"))} />}
       {onRefresh && <IconButton icon="refresh" label={t("ui.refresh")} shortcut="F5" onClick={onRefresh} />}
       <StreamerToggle />
       {onToggleTabs && (

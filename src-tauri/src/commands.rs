@@ -1348,6 +1348,19 @@ pub fn say_greeting() {
     crate::voice::say_greeting();
 }
 
+/// Whether Windows starts Altbase at sign-in (`autostart`).
+#[tauri::command]
+pub fn autostart_get() -> bool {
+    crate::autostart::enabled()
+}
+
+/// Turns starting with Windows on or off; what it is afterwards.
+#[tauri::command]
+pub fn autostart_set(on: bool) -> Result<bool> {
+    crate::autostart::set(on)?;
+    Ok(crate::autostart::enabled())
+}
+
 /// Physical memory by list, like RAMMap's Use Counts (`memory::lists`).
 #[tauri::command]
 pub async fn memory_lists() -> crate::memory::MemoryLists {
@@ -3093,6 +3106,24 @@ pub(crate) fn apply_performance(v: &mut Settings, patch: &SettingsPatch) -> Resu
             return Err(AppError::Invalid(tr!("The scheduled rejoin must be off (0) or every 1 to 48 hours.")));
         }
         v.rejoin_every_hours = h;
+    }
+    if let Some(p) = patch.trim_at_mem_pct {
+        if p != 0 && !(50..=95).contains(&p) {
+            return Err(AppError::Invalid(tr!("The memory level to trim at must be off (0) or 50 to 95 percent.")));
+        }
+        v.trim_at_mem_pct = p;
+    }
+    if let Some(n) = patch.max_clients {
+        if n > 200 {
+            return Err(AppError::Invalid(tr!("The most clients at once must be off (0) or 1 to 200.")));
+        }
+        v.max_clients = n;
+    }
+    if let Some(m) = patch.min_free_mem_mb {
+        if m != 0 && !(256..=65_536).contains(&m) {
+            return Err(AppError::Invalid(tr!("The memory to keep free must be off (0) or 256 to 65,536 MB.")));
+        }
+        v.min_free_mem_mb = m;
     }
     if let Some(t) = patch.mem_throttle {
         if t.mb != 0 && !(512..=65_536).contains(&t.mb) {

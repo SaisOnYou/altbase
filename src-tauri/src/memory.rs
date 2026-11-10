@@ -190,6 +190,54 @@ pub fn empty(lists: &[EmptyList]) -> Result<()> {
     }
 }
 
+/// How full the PC's physical memory is, in percent; None when Windows won't say.
+pub fn load_pct() -> Option<u32> {
+    let mut status = MemoryStatusEx { dw_length: std::mem::size_of::<MemoryStatusEx>() as u32, ..Default::default() };
+    // SAFETY: `status` is a MEMORYSTATUSEX with its length set.
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.dw_memory_load)
+}
+
+/// How often the pressure trim looks, and the least time between two rounds: the pages a trim
+/// frees fault back in as the games need them, so trimming again at once only costs CPU.
+const PRESSURE_LOOK: std::time::Duration = std::time::Duration::from_secs(20);
+const PRESSURE_REST: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// Whether a pressure trim is due (pure): the setting is on, memory is at least that full, and the
+/// last round was long enough ago.
+fn pressure_due(at_pct: u32, load: Option<u32>, since_last: Option<std::time::Duration>) -> bool {
+    at_pct > 0 && load.is_some_and(|l| l >= at_pct) && since_last.is_none_or(|d| d >= PRESSURE_REST)
+}
+
+/// The memory-pressure trim (`Settings.trim_at_mem_pct`): while the PC's memory is that full,
+/// pages every running client's working set out, at most once every three minutes. No admin
+/// rights; the clients' own trims (`limits`) go on as they are.
+pub fn spawn_pressure(app: tauri::AppHandle) {
+    use tauri::Manager;
+    let started = std::thread::Builder::new().name("memory-pressure".into()).spawn(move || {
+        let mut last: Option<std::time::Instant> = None;
+        loop {
+            std::thread::sleep(PRESSURE_LOOK);
+            let s = app.state::<crate::App>();
+            let at = s.db.settings().map(|v| v.trim_at_mem_pct).unwrap_or(0);
+            let load = if at > 0 { load_pct() } else { None };
+            if !pressure_due(at, load, last.map(|t| t.elapsed())) {
+                continue;
+            }
+            last = Some(std::time::Instant::now());
+            let mut trimmed = 0;
+            for (_, pid, t0, _) in s.tracker.clients() {
+                if crate::instances::limits::trim(pid, t0).is_ok() {
+                    trimmed += 1;
+                }
+            }
+            log::info!("memory: at {}% (trim at {at}%), trimmed {trimmed} clients", load.unwrap_or(0));
+        }
+    });
+    if let Err(e) = started {
+        log::warn!("memory-pressure trim not running: {e}");
+    }
+}
+
 /// Physical memory now. Counters that can't be read count as 0 (logged once).
 pub fn lists() -> MemoryLists {
     let mut status = MemoryStatusEx { dw_length: std::mem::size_of::<MemoryStatusEx>() as u32, ..Default::default() };
@@ -427,6 +475,17 @@ mod tests {
         assert_eq!(parse_args(&args(&["altbase.exe", ARG, "standby,format-c"])), Some(Err(())));
         assert_eq!(parse_args(&args(&["altbase.exe", ARG, "standby", "extra"])), Some(Err(())));
         assert_eq!(parse_args(&args(&["altbase.exe", ARG, ""])), Some(Err(())));
+    }
+
+    #[test]
+    fn pressure_trim_waits_for_the_level_and_rests_between_rounds() {
+        use std::time::Duration;
+        assert!(!pressure_due(0, Some(99), None), "off");
+        assert!(!pressure_due(85, Some(84), None), "below the level");
+        assert!(!pressure_due(85, None, None), "unknown load never trims");
+        assert!(pressure_due(85, Some(85), None), "first round");
+        assert!(!pressure_due(85, Some(97), Some(Duration::from_secs(60))), "resting");
+        assert!(pressure_due(85, Some(97), Some(PRESSURE_REST)));
     }
 
     #[test]

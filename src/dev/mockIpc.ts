@@ -77,7 +77,7 @@ let settings: Settings = {
   adaptive: { enabled: false, background: { cpuCap: 25, eco: true, trimEveryMin: null, affinity: null } }, bandwidthKbps: 0,
   antiAfk: { enabled: false, intervalMin: 15 },
   discord: { crash: true, hang: true, memRestart: true, disconnect: true, restart: true, breaker: true, batchDone: true, launch: false, statusEveryMin: 0, ping: "" },
-  autoUpdate: false, selfUpdate: true, rejoinEveryHours: 0, tabLayout: "top", minimizeOnLaunch: false, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, protectMain: true, muteOnLaunch: false, windowLayout: "off", lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
+  autoUpdate: false, selfUpdate: true, rejoinEveryHours: 0, trimAtMemPct: 0, maxClients: 0, minFreeMemMb: 0, tabLayout: "top", minimizeOnLaunch: false, microWidth: 320, microHeight: 240, tinyOnLaunch: false, panicHotkey: "", cleanLogs: false, fpsCap: 0, lowGraphics: true, skipSplash: false, protectMain: true, muteOnLaunch: false, windowLayout: "off", lighterRendering: true, renderFlags: { msaa: "x1", texture: "lowest", mode: "default", graySky: false, noGrass: true, lowestFrm: true, pauseVoxelizer: false },
   allowPublicNetworks: true, language: "",
 };
 
@@ -99,6 +99,7 @@ let webhook: { id: string; token: string } | null = null;
 const WEBHOOK = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/(\d{1,25})\/([A-Za-z0-9_-]{1,128})$/;
 const discordStatus = () => ({ configured: webhook !== null, webhook: webhook && `…${webhook.id.slice(-4)}` });
 let bandwidthActive = false;
+let mockAutostart = false;
 /** The fake PC's memory lists in MB (`memory_lists`); trims and Empty commands move them. */
 let memInUse = 14_800, memModified = 900, memStandby = 11_200;
 /** Fake metrics: a wave per client, so the sparklines move. */
@@ -1220,6 +1221,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         // No speech here.
       }
       return null;
+    case "autostart_get":
+      return mockAutostart;
+    case "autostart_set":
+      mockAutostart = args.on as boolean;
+      return mockAutostart;
     case "memory_lists": {
       // A 32 GB PC with a few clients: the lists move a little each poll.
       const wobble = Math.round(Math.sin(Date.now() / 4000) * 120);

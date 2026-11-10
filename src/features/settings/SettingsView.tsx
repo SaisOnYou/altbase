@@ -13,10 +13,11 @@ import { SettingSection } from "./kit/SettingSection";
 import { dyn, shown } from "./registry";
 import { keyOf, placeNames, search, type Hit, type HitGroup } from "./search";
 import { SelfUpdateRow, VersionRow } from "./rows/about";
-import { AccentRow, BackgroundRow, GreetingRow, MotionRow, SoundRow, StreamerRow } from "./rows/appearance";
+import { AccentRow, BackgroundRow, GreetingRow, MotionRow, SoundRow, StreamerRow, AutostartRow, StartPlayRow } from "./rows/appearance";
 import { BackupRow, BrowserDataRow, CleanLogsRow, DataFolderRow } from "./rows/data";
 import { BreakerRow, ClientCard, MultiRow, ShutdownRow } from "./rows/launching";
 import { EncryptionRow, MasterPasswordRow, PublicNetworkRow, RecoveryCodeRow } from "./rows/security";
+import { BoldFocusRow, ContrastSettingRow, NavLabelsRow, ReadableFontRow, TextSizeRow, UnderlineLinksRow } from "./rows/accessibility";
 import { ShortcutsTable } from "./rows/shortcuts";
 
 /** Settings' rows that draw their own controls, by entry id. */
@@ -31,6 +32,14 @@ const RENDERERS: RowRenderers = {
   streamer: StreamerRow,
   sounds: SoundRow,
   motion: MotionRow,
+  autostart: AutostartRow,
+  startPlay: StartPlayRow,
+  textSize: TextSizeRow,
+  contrast: ContrastSettingRow,
+  readableFont: ReadableFontRow,
+  boldFocus: BoldFocusRow,
+  navLabels: NavLabelsRow,
+  underlineLinks: UnderlineLinksRow,
   encryption: EncryptionRow,
   masterPassword: MasterPasswordRow,
   recoveryCode: RecoveryCodeRow,

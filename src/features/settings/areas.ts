@@ -4,7 +4,7 @@ import { ENTRIES } from "./registry";
 import { SHORTCUTS } from "./shortcuts";
 
 /** Settings' areas, one screen each, picked from the island's Settings group. */
-export type SettingsArea = "launching" | "appearance" | "security" | "data" | "about" | "shortcuts";
+export type SettingsArea = "launching" | "appearance" | "accessibility" | "security" | "data" | "about" | "shortcuts";
 
 /** An area's rows by group, in screen order. A group without a label is the area's first block. */
 export type AreaDef = { id: SettingsArea; label: Key; icon: IconName; groups: readonly { label?: Key; ids: readonly string[] }[] };
@@ -15,7 +15,7 @@ export const AREAS: readonly AreaDef[] = [
     label: "settings.section.launching",
     icon: "rocket",
     groups: [
-      { ids: ["multi", "protectLogin", "launchDelay", "launchArgs", "protectMain"] },
+      { ids: ["multi", "protectLogin", "launchDelay", "launchArgs", "protectMain", "startPlay"] },
       { label: "settings.group.recovery", ids: ["autoRejoin", "autoRestart", "rejoinEvery", "breaker", "antiAfk"] },
       { label: "settings.group.stopping", ids: ["panic", "closeGrace", "shutdown"] },
       { label: "settings.client", ids: ["client", "autoUpdate"] },
@@ -26,8 +26,17 @@ export const AREAS: readonly AreaDef[] = [
     label: "settings.section.appearance",
     icon: "palette",
     groups: [
-      { ids: ["theme", "accent", "background", "density", "tabLayout", "language", "streamer", "greeting", "sounds", "motion"] },
-      { label: "settings.group.window", ids: ["closeToTray", "skipSplash"] },
+      { ids: ["theme", "accent", "background", "density", "tabLayout", "language", "streamer", "greeting", "sounds"] },
+      { label: "settings.group.window", ids: ["autostart", "closeToTray", "skipSplash"] },
+    ],
+  },
+  {
+    id: "accessibility",
+    label: "settings.section.accessibility",
+    icon: "eye",
+    groups: [
+      { ids: ["textSize", "contrast", "readableFont"] },
+      { label: "settings.group.moving", ids: ["motion", "boldFocus", "navLabels", "underlineLinks"] },
     ],
   },
   {

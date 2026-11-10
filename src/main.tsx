@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "@fontsource-variable/source-serif-4/opsz.css";
+import "@fontsource/atkinson-hyperlegible/latin-400.css";
+import "@fontsource/atkinson-hyperlegible/latin-700.css";
 import "./theme.css";
 import App from "./App";
 import { accentTokens, ACCENT_KEY, THEME_KEY } from "./app/theme";
@@ -12,6 +14,7 @@ import { debugLog } from "./api";
 import { t } from "./i18n";
 import { LayoutPreview, type PreviewData } from "./features/launch/LayoutPreview";
 import { assertMotionTokens, installReactive, installReducedMotion } from "./ui/motion";
+import { installPrefs } from "./ui/prefs";
 
 // Everything that goes wrong in the UI reaches altbase.log (the Debug tab).
 let forwarding = false;
@@ -91,6 +94,7 @@ if (preview) {
 }
 
 installReducedMotion();
+installPrefs();
 installReactive();
 
 // Plain-browser preview (`npm run dev` outside Tauri), and the website's demo (`npm run build:demo`).

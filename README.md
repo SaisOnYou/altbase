@@ -36,6 +36,13 @@ you add your own webhook for alerts. No account and no telemetry; updates come s
   list, modified list, working sets) behind a single administrator prompt.
 - **Encrypted vault** — cookies encrypted with Windows DPAPI, or with a master password
   (Argon2id + AES-256-GCM) with auto-lock, a recovery code and throttled unlock attempts.
+- **Built for unattended farming** — start with Windows, play a favourite by itself when Altbase
+  opens, hop a client to another server, a launch guard (most clients at once, memory to keep
+  free) and an automatic trim when the PC's memory fills up.
+- **Fast to drive** — a Home dashboard, named tabs, and a command palette (Ctrl+K) that finds any
+  page, account, favourite, action or setting.
+- **Accessibility** — text size up to 150%, a higher-contrast palette, an easier-to-read font,
+  thicker focus rings, reduced or no motion, and full keyboard use.
 - **Streamer mode** — one switch hides usernames, user IDs, job IDs and cookies.
 - **Warm light and dark themes**, in 18 languages, with an optional spoken greeting at start.
 

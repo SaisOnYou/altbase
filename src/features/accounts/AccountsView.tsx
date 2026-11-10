@@ -40,6 +40,42 @@ const FILTERS: { key: Filter; label: Key }[] = [
 ];
 
 /** What the Status cell shows: presence for a valid cookie (Studio counts as online), else the cookie status. */
+/** How the list is ordered: the user's own (drag to rearrange) or by a column. */
+export type Sort = "manual" | "name" | "status" | "newest" | "oldest";
+const SORTS: { key: Sort; label: Key }[] = [
+  { key: "manual", label: "accounts.sort.manual" },
+  { key: "name", label: "accounts.sort.name" },
+  { key: "status", label: "accounts.sort.status" },
+  { key: "newest", label: "accounts.sort.newest" },
+  { key: "oldest", label: "accounts.sort.oldest" },
+];
+const SORT_KEY = "altbase.accountSort";
+const storedSort = (): Sort => {
+  try {
+    const v = localStorage.getItem(SORT_KEY);
+    return SORTS.some((x) => x.key === v) ? (v as Sort) : "manual";
+  } catch {
+    return "manual";
+  }
+};
+
+/** `list` in the chosen order (pure). The MAIN stays first; "status" puts accounts that need
+ * something (signed out, challenged) above the ones that are fine; ties keep the user's order. */
+export function sortAccounts(list: AccountSummary[], sort: Sort): AccountSummary[] {
+  if (sort === "manual") return list;
+  const name = (a: AccountSummary) => (a.alias || a.displayName || a.username).toLocaleLowerCase();
+  const by: Record<Exclude<Sort, "manual">, (a: AccountSummary, b: AccountSummary) => number> = {
+    name: (a, b) => name(a).localeCompare(name(b)),
+    status: (a, b) => Number(a.status === "valid") - Number(b.status === "valid"),
+    newest: (a, b) => b.createdAt - a.createdAt,
+    oldest: (a, b) => a.createdAt - b.createdAt,
+  };
+  return list
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => Number(y.a.main) - Number(x.a.main) || by[sort](x.a, y.a) || x.i - y.i)
+    .map((x) => x.a);
+}
+
 const shownKey = (a: AccountSummary, p?: Presence): Filter | "valid" => {
   if (a.status !== "valid") return a.status;
   if (!p || p.kind === "unknown") return "valid";
@@ -76,6 +112,16 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
   const statusMenu = useAnchor();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const sortMenu = useAnchor();
+  const [sort, setSortState] = useState<Sort>(storedSort);
+  const setSort = (next: Sort) => {
+    setSortState(next);
+    try {
+      localStorage.setItem(SORT_KEY, next);
+    } catch {
+      // Not kept: it applies until Altbase restarts.
+    }
+  };
   const [checked, setChecked] = useState<Set<number>>(() => new Set());
   const [mainSkipped, setMainSkipped] = useState(false);
   const rangeFrom = useRef<number | null>(null);
@@ -134,7 +180,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
     [inGroup.map((a) => `${a.id}:${a.status}`).join(), filter],
   );
   const presence = usePresence(presenceIds).data;
-  const shown = matching.filter((a) => inFilter(a, filter, presence?.get(a.id)));
+  const shown = sortAccounts(matching.filter((a) => inFilter(a, filter, presence?.get(a.id))), sort);
   const checkedIds = accounts.filter((a) => checked.has(a.id)).map((a) => a.id);
   const canPlay = (id: number) => byId.get(id)?.status === "valid" && !live.has(id);
   const current = (selected !== null && byId.get(selected)) || shown[0] || null;
@@ -519,6 +565,25 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                   </MenuRadioItem>
                 ))}
               </Popover>
+              <button type="button" className="chip" popoverTarget="account-sort" style={sortMenu.style} data-on={sort !== "manual" || undefined} aria-haspopup="menu">
+                <Icon name="layoutTop" size={14} />
+                {t(SORTS.find((x) => x.key === sort)!.label)}
+                <Icon name="chevron" size={12} />
+              </button>
+              <Popover id="account-sort" anchor={sortMenu.name} role="menu" label={t("accounts.sort.title")} onToggle={focusFirstItem("account-sort")}>
+                {SORTS.map((x) => (
+                  <MenuRadioItem
+                    key={x.key}
+                    checked={sort === x.key}
+                    onSelect={() => {
+                      setSort(x.key);
+                      document.getElementById("account-sort")?.hidePopover();
+                    }}
+                  >
+                    {t(x.label)}
+                  </MenuRadioItem>
+                ))}
+              </Popover>
               <GroupChips groups={groups} accounts={accounts} active={activeGroup?.id ?? null} onPick={setGroup} />
             </div>
 
@@ -546,7 +611,7 @@ export function AccountsView({ accounts, groups, density, vaultMode, clipboardSe
                   }}
                   onLaunch={(id) => onLaunch([id])}
                   menuId={menu && !menu.solo ? menu.id : undefined}
-                  onReorder={applyOrder}
+                  onReorder={sort === "manual" ? applyOrder : () => toast(t("accounts.sort.locked"))}
                   onClearFilters={clearFilters}
                 />
                 <footer className="h-9 flex-none flex items-center gap-4 px-4 meta border-t border-line">

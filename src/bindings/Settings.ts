@@ -100,6 +100,19 @@ memRestartMb: number,
  */
 rejoinEveryHours: number, 
 /**
+ * Trim every client's memory when the PC's memory is this full, in percent (`memory::pressure`);
+ * 0: off, else 50..=95.
+ */
+trimAtMemPct: number, 
+/**
+ * The launch guard: the most clients open at once; 0: no limit, else 1..=200.
+ */
+maxClients: number, 
+/**
+ * The launch guard: no launch while the PC has less free memory than this, in MB; 0: off.
+ */
+minFreeMemMb: number, 
+/**
  * Hold a client to a CPU cap (lowering its frame rate) while its private memory is over a limit.
  */
 memThrottle: MemThrottle, 

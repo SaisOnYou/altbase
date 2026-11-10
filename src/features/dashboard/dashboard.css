@@ -366,22 +366,110 @@
   .home-step + .home-step {
     border-top: 1px solid var(--line);
   }
-  .home-favs {
-    display: flex;
-    flex-direction: column;
-    max-width: 880px;
-    padding: 2px 16px;
+  /* Favourites: a grid of cards, each a click from playing. */
+  .home-favgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
   }
-  .home-fav + .home-fav {
-    border-top: 1px solid var(--line);
+  .home-favcard {
+    display: flex;
+    transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .home-favcard:hover {
+    background: var(--float);
+    box-shadow: inset 0 0 0 1px var(--line), var(--shadow-thumb);
   }
   .home-fav-row {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 14px;
-    padding: 12px 0;
+    flex: 1;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    min-width: 0;
+    padding: 14px 16px;
   }
+  .home-fav-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .home-fav-why {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--fg-2);
+  }
+
+  /* At a glance: four tiles, each a big number and what it means. */
+  .glance-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 12px;
+  }
+  .glance {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 16px 18px;
+    border-radius: var(--r-lg);
+    background: var(--surface-1);
+    box-shadow: inset 0 0 0 1px var(--line);
+    text-align: start;
+    transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .glance:hover {
+    background: var(--float);
+    box-shadow: inset 0 0 0 1px var(--line), var(--shadow-thumb);
+  }
+  .glance-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--fg-2);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+  .glance-value {
+    font-family: var(--font-display);
+    font-size: 34px;
+    font-weight: 500;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: -0.01em;
+  }
+  .glance-of {
+    margin-inline-start: 6px;
+    color: var(--fg-3);
+    font-size: 18px;
+  }
+  .glance-sub {
+    color: var(--fg-3);
+    font-size: 13px;
+  }
+  .glance-sub[data-tone="attention"] {
+    color: var(--attention);
+  }
+  .glance-meter {
+    display: block;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--surface-3);
+  }
+  .glance-meter > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--fg-3);
+    transition: width var(--dur-slow) var(--ease-out);
+  }
+  .glance-meter[data-tone="ok"] > span { background: var(--ok); }
+  .glance-meter[data-tone="attention"] > span { background: var(--attention); }
+  .glance-meter[data-tone="err"] > span { background: var(--err); }
   .home-who {
     display: inline-flex;
     align-items: center;

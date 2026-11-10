@@ -255,6 +255,13 @@ pub struct Settings {
     /// Rejoin a client into the same game once it has been in it this many hours, within the
     /// breaker (`CrashKind::Scheduled`); 0: off, else 1..=48.
     pub rejoin_every_hours: u32,
+    /// Trim every client's memory when the PC's memory is this full, in percent
+    /// (`memory::pressure`); 0: off, else 50..=95.
+    pub trim_at_mem_pct: u32,
+    /// The launch guard: the most clients open at once; 0: no limit, else 1..=200.
+    pub max_clients: u32,
+    /// The launch guard: no launch while the PC has less free memory than this, in MB; 0: off.
+    pub min_free_mem_mb: u32,
     /// Hold a client to a CPU cap (lowering its frame rate) while its private memory is over a limit.
     pub mem_throttle: MemThrottle,
     /// Trim each client's working set this often (minutes, 0: off) unless its own limits say.
@@ -489,6 +496,9 @@ impl Default for Settings {
             window_layout: WindowLayout::Off,
             mem_restart_mb: 0,
             rejoin_every_hours: 0,
+            trim_at_mem_pct: 0,
+            max_clients: 0,
+            min_free_mem_mb: 0,
             mem_throttle: MemThrottle::default(),
             trim_every_min: 0,
             auto_spread: false,
@@ -565,6 +575,12 @@ pub struct SettingsPatch {
     pub mem_restart_mb: Option<u32>,
     #[ts(optional)]
     pub rejoin_every_hours: Option<u32>,
+    #[ts(optional)]
+    pub trim_at_mem_pct: Option<u32>,
+    #[ts(optional)]
+    pub max_clients: Option<u32>,
+    #[ts(optional)]
+    pub min_free_mem_mb: Option<u32>,
     #[ts(optional)]
     pub mem_throttle: Option<MemThrottle>,
     #[ts(optional)]

@@ -69,6 +69,18 @@ export const PERFORMANCE_ENTRIES: readonly Entry[] = [
     control: { kind: "offOrValue", ...RANGES.trimMin, unit: "settings.unit.minutes", short: "settings.unit.min" }, aliases: ["ram", "working set"],
   },
   {
+    id: "trimAtMem", place: cpu, label: "settings.trimAtMem", hint: "settings.trimAtMemShort", more: "settings.trimAtMemHint", field: "trimAtMemPct",
+    control: { kind: "offOrValue", ...RANGES.trimAtMemPct, unit: "settings.unit.percent", short: { text: "%" } }, aliases: ["ram", "pressure", "memory full", "automatic"],
+  },
+  {
+    id: "maxClients", place: cpu, label: "settings.maxClients", hint: "settings.maxClientsShort", more: "settings.guardHint", field: "maxClients",
+    control: { kind: "offOrValue", ...RANGES.maxClients, unit: "settings.unit.clients", short: { text: "" } }, aliases: ["limit", "guard", "most", "cap"],
+  },
+  {
+    id: "minFreeMem", place: cpu, label: "settings.minFreeMem", hint: "settings.minFreeMemShort", more: "settings.guardHint", field: "minFreeMemMb",
+    control: { kind: "offOrValue", ...RANGES.minFreeMemMb, ...mb }, aliases: ["ram", "guard", "free", "reserve"],
+  },
+  {
     id: "memThrottle", place: cpu, label: "settings.memThrottle", hint: "performance.memThrottleShort", more: ["settings.memThrottleHint", "settings.noMemoryFreed"], field: "memThrottle.mb",
     control: { kind: "offOrValue", ...RANGES.memThrottleMb, ...mb }, aliases: ["ram", "commit"],
   },

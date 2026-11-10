@@ -351,5 +351,9 @@
   "Altbase is up to date.": "Altbase 已是最新版本。",
   "The downloaded Altbase installer was not run: its signature file is malformed.": "下载的 Altbase 安装程序未运行：签名文件格式错误。",
   "Could not start Altbase's installer: {why}": "无法启动 Altbase 安装程序：{why}",
-  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment."
+  "Updating Altbase. It restarts by itself in a moment.": "Updating Altbase. It restarts by itself in a moment.",
+  "The memory level to trim at must be off (0) or 50 to 95 percent.": "The memory level to trim at must be off (0) or 50 to 95 percent.",
+  "The most clients at once must be off (0) or 1 to 200.": "The most clients at once must be off (0) or 1 to 200.",
+  "The memory to keep free must be off (0) or 256 to 65,536 MB.": "The memory to keep free must be off (0) or 256 to 65,536 MB.",
+  "Windows didn't change the startup setting (error {code}).": "Windows didn't change the startup setting (error {code})."
 }
