@@ -1,0 +1,153 @@
+/* Altbase's voice: neon on black. Titles, the wordmark and big numbers in a squared techy face;
+   everything you read or operate stays in the UI sans. What is lit (the primary action, a switch
+   that's on, the current tab, live numbers) glows; everything else stays dark and quiet so a wall of
+   alts reads at a glance. Colours live in tokens.css. */
+@layer components {
+  .page-title,
+  .dlg-title,
+  .vault-head h1,
+  .app-menu-btn .wordmark,
+  .section-title {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+  .page-title {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+  .section-title {
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 13px;
+    color: var(--fg-2);
+  }
+  .dlg-title {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .vault-head h1 {
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  /* The wordmark: cyan into magenta, lit from within. */
+  .app-menu-btn .wordmark {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--neon-3) 55%, var(--neon-2) 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 10px rgb(0 229 255 / 0.35));
+  }
+
+  /* The window: a faint grid over the black, with a cyan haze at the top and magenta at the foot. */
+  .app {
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgb(0 229 255 / 0.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 110%, rgb(255 43 214 / 0.06), transparent 60%),
+      linear-gradient(rgb(130 150 255 / 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(90deg, rgb(130 150 255 / 0.035) 1px, transparent 1px) 0 0 / 32px 32px,
+      var(--ground);
+  }
+
+  /* Panels: a hairline that brightens toward the top edge, like a lit bezel. */
+  .panel {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--surface-1) 88%, #2a3366) 0%, var(--surface-1) 60px);
+    box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 rgb(160 180 255 / 0.08);
+  }
+
+  /* Navigation: the current place glows cyan. */
+  .island,
+  .home-strip,
+  .home-rail {
+    --accent: var(--nav-on);
+    --on-accent: var(--accent-text);
+    --accent-ring: rgb(0 229 255 / 0.45);
+  }
+  .island-item[aria-current="page"],
+  .island-child[aria-current="page"] {
+    color: var(--accent-text);
+    text-shadow: 0 0 12px rgb(0 229 255 / 0.55);
+  }
+
+  /* Home's favourites: a list of equal choices, so each Play is a quiet secondary button; the one
+     lit button on a page stays its call to action. */
+  .home-fav-row {
+    --accent: var(--surface-3);
+    --on-accent: var(--fg);
+    --accent-ring: transparent;
+  }
+
+  /* The primary action: solid neon with a glow that swells on hover. */
+  .btn-primary {
+    box-shadow: var(--glow);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .btn-primary:hover:not(:disabled, [aria-disabled="true"]) {
+    background: color-mix(in oklab, var(--accent) 85%, white);
+    box-shadow: 0 0 0 1px rgb(0 229 255 / 0.7), 0 0 26px -2px rgb(0 229 255 / 0.6);
+  }
+  .btn-primary:is(:disabled, [aria-disabled="true"]) {
+    box-shadow: none;
+  }
+  :root[data-accent] .btn-primary,
+  :root[data-accent] .btn-primary:hover:not(:disabled, [aria-disabled="true"]) {
+    box-shadow: 0 0 18px -4px var(--accent);
+  }
+
+  /* A switch that's on is lit. */
+  .switch[aria-checked="true"] {
+    box-shadow: inset 0 0 0 1px var(--accent-ring), 0 0 14px -2px var(--accent);
+  }
+
+  /* Big numbers read like a HUD. */
+  .glance-value,
+  .farm-stat-value {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  /* Selected text takes the neon, faintly. */
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+/* Settings' first accent swatch is Altbase's own cyan. */
+@layer views {
+  .swatch.set-mono {
+    background: linear-gradient(135deg, #00e5ff, #ff2bd6);
+  }
+  .swatch.set-mono .set-mono-half {
+    display: none;
+  }
+}
+
+/* Streamer mode (ui/streamer.ts): user ids and the like blur until it is off. */
+@layer components {
+  :root[data-streamer] .sensitive {
+    filter: blur(5px);
+    user-select: none;
+  }
+  .title-tools .wc[data-on] {
+    color: var(--accent-text);
+  }
+}
+
+/* Reduced or no motion and Windows contrast themes: no glows. */
+@media (forced-colors: active) {
+  .app-menu-btn .wordmark {
+    background: none;
+    color: CanvasText;
+    filter: none;
+  }
+}

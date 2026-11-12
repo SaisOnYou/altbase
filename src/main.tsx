@@ -4,7 +4,9 @@ import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
-import "@fontsource-variable/source-serif-4/opsz.css";
+import "@fontsource/chakra-petch/latin-500.css";
+import "@fontsource/chakra-petch/latin-600.css";
+import "@fontsource/chakra-petch/latin-700.css";
 import "@fontsource/atkinson-hyperlegible/latin-400.css";
 import "@fontsource/atkinson-hyperlegible/latin-700.css";
 import "./theme.css";
@@ -61,10 +63,11 @@ class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   }
 }
 
-// Before first paint: the last theme and accent, so a light or coloured start doesn't flash.
+// Before first paint: the accent, so a coloured start doesn't flash. Altbase is dark only.
+document.documentElement.dataset.theme = "dark";
 try {
-  // Light is Altbase's default: only a remembered dark start stays dark.
-  const theme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
+  const theme = "dark";
+  localStorage.setItem(THEME_KEY, theme);
   const root = document.documentElement;
   root.dataset.theme = theme;
   const accent = localStorage.getItem(ACCENT_KEY);
@@ -79,8 +82,7 @@ try {
     root.style.setProperty("--splash-accent", accentTokens(accent, "dark").text);
   }
 } catch {
-  // No storage: the defaults (light, clay) apply until settings load.
-  document.documentElement.dataset.theme = "light";
+  // No storage: the default accent applies until settings load.
 }
 
 // The window layout preview window (`layout_preview`): its spots, not the app.

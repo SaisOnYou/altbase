@@ -9,6 +9,7 @@ import { AccountsView } from "../features/accounts/AccountsView";
 import { AddAccountDialog, type Tab as AddTab } from "../features/accounts/AddAccountDialog";
 import { AccountRail } from "../features/dashboard/AccountRail";
 import { DashboardView } from "../features/dashboard/DashboardView";
+import { FarmView } from "../features/farm/FarmView";
 import { useHomeTabs, useSectionOrder } from "../features/dashboard/homeLayout";
 import { DebugView } from "../features/debug/DebugView";
 import { DiscordView } from "../features/discord/DiscordView";
@@ -59,7 +60,7 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
   const accounts = useAccounts();
   const groups = useGroups();
   const instances = useInstances().data ?? [];
-  const [view, setView] = useState<View>("dashboard");
+  const [view, setView] = useState<View>("farm");
   const [area, setArea] = useState<SettingsArea>("launching");
   const [group, setGroup] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -304,7 +305,9 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
       )}
       <div className="stage">
         <ViewTransition key={view} enter="view-in" exit="view-out" update="none" default="none">
-          {view === "dashboard" ? (
+          {view === "farm" ? (
+            <FarmView accounts={accounts.data} onAdd={() => openAdd()} />
+          ) : view === "dashboard" ? (
             <DashboardView
               accounts={accounts.data}
               home={homeTabs}

@@ -46,7 +46,9 @@ function storedSections(): string[] {
   if (unsavedSections) return unsavedSections;
   try {
     const v: unknown = JSON.parse(localStorage.getItem(SECTIONS) ?? "null");
-    return Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+    const ids = Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+    // Farm came in 1.2: an order saved before it puts it first, not last.
+    return ids.length && !ids.includes("farm") ? ["farm", ...ids] : ids;
   } catch {
     return [];
   }

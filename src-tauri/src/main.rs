@@ -225,9 +225,9 @@ fn remove_old_db(data_dir: &Path, old: &Path) -> bool {
 }
 
 fn main_window(app: &TauriApp, data_dir: &Path, skip_splash: bool) -> tauri::Result<()> {
-    // The light theme's --ground (src/styles/tokens.css), Altbase's default: what shows before the
-    // UI paints and while the window grows.
-    let bg = Color(244, 242, 236, 255);
+    // The theme's --ground (src/styles/tokens.css): what shows before the UI paints and while the
+    // window grows.
+    let bg = Color(7, 8, 15, 255);
 
     let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Altbase")

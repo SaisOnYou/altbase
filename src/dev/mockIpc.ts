@@ -70,7 +70,7 @@ let accounts: AccountSummary[] = seed.map(([alias, displayName, username, userId
 }));
 
 let settings: Settings = {
-  theme: "light", accent: "", backgroundDim: 60, density: "detailed", autoLockMinutes: 15, clipboardClearSeconds: 30, cacheMinutes: 10,
+  theme: "dark", accent: "", backgroundDim: 60, density: "detailed", autoLockMinutes: 15, clipboardClearSeconds: 30, cacheMinutes: 10,
   multiInstance: true, protectSharedLogin: true, launchDelayMs: 6000, autoRejoin: false, autoRestartOnCrash: false,
   breakerMax: 3, breakerWindowMin: 10, closeGraceS: 5, launchArgs: "", closeToTray: false,
   memRestartMb: 0, memThrottle: { mb: 0, cpuCap: 10 }, trimEveryMin: 0, autoSpread: false, fairCap: false,
@@ -1430,6 +1430,40 @@ if (preview.get("scenario") === "busy") {
   lockHeld = true;
   [1, 2, 7].forEach((id, n) => setTimeout(() => track(id, 9000 + n, { kind: "place", placeId: 1818, launchData: null }, 1818, id === 7), 200 + n * 180));
   setTimeout(() => void startBatch({ accountIds: [3, 5, 8], target: { kind: "place", placeId: 1818, launchData: null }, delayMs: 6000, sameServer: "off", favouriteId: null, fpsCap: null }), 1600);
+}
+
+// ?scenario=farm  a running farm: sixteen more alts, most in Sky Islands, one down, crash history
+if (preview.get("scenario") === "farm") {
+  strangerRunning = false;
+  lockHeld = true;
+  for (let n = 0; n < 16; n++) {
+    const id = accounts.length + 1;
+    const num = String(n + 3).padStart(2, "0");
+    accounts.push({ ...accounts[1], id, userId: 7_100_000_000 + n, username: `nova_alt${num}`, displayName: `Nova Alt`, alias: `Alt ${num}`, sortOrder: id, main: false, favourite: false, fpsCap: null, groupIds: [2] });
+  }
+  const sky: LaunchTarget = { kind: "place", placeId: 4410028153, launchData: null };
+  const farmIds = [3, 5, 7, ...accounts.slice(9, 22).map((a) => a.id)];
+  // After the mock IPC is in place: a tracked client emits instances://changed.
+  setTimeout(() =>
+    farmIds.forEach((id, n) => {
+      const i = track(id, 12000 + n, sky, 4410028153, false, n % 5 === 0 ? 2 : n % 4 === 0 ? 1 : 0);
+      i.startedAt -= (3 * 3600 + n * 431) * 1000;
+    }), 50);
+  const now = Date.now();
+  crashes.push(
+    { id: 101, instanceId: "x1", accountId: 12, kind: "disconnect", at: now - 4 * 60_000, uptimeMs: 2.6 * 3600_000, reason: "Lost connection to the game server (error 277)", placeId: 4410028153, hasLog: true },
+    { id: 102, instanceId: "x2", accountId: 15, kind: "mem", at: now - 19 * 60_000, uptimeMs: 3.1 * 3600_000, reason: "Over the memory limit (1,800 MB)", placeId: 4410028153, hasLog: false },
+    { id: 103, instanceId: "x3", accountId: 7, kind: "hang", at: now - 52 * 60_000, uptimeMs: 1.4 * 3600_000, reason: "Not responding for 90 s", placeId: 4410028153, hasLog: true },
+    { id: 104, instanceId: "x4", accountId: 18, kind: "scheduled", at: now - 75 * 60_000, uptimeMs: 4 * 3600_000, reason: null, placeId: 4410028153, hasLog: false },
+  );
+  // One that Roblox kicked and that's waiting on a rejoin.
+  setTimeout(() => {
+    const down = instances.find((i) => i.accountId === accounts[13].id);
+    if (down) {
+      down.state = "disconnected";
+      instancesChanged();
+    }
+  }, 5000);
 }
 
 mockWindows("main");

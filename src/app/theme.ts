@@ -14,9 +14,9 @@ export const ACCENT_KEY = "altbase.accent";
 const SEE_THROUGH: Record<string, number> = { "--ground": 50, "--surface-1": 72, "--surface-2": 84, "--surface-3": 88, "--island": 86, "--float": 92 };
 
 /** The grounds an accent is checked against: the CSS values (tokens.css), per theme. */
-const GROUND = { dark: "#262624", light: "#f4f2ec" } as const;
-const ISLAND = { dark: "#302f2c", light: "#fbfaf7" } as const;
-const EDGE = { dark: "#807c72", light: "#8a867c" } as const;
+const GROUND = { dark: "#07080f", light: "#07080f" } as const;
+const ISLAND = { dark: "#0d0f1a", light: "#0d0f1a" } as const;
+const EDGE = { dark: "#646d94", light: "#646d94" } as const;
 
 const channel = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -69,9 +69,10 @@ export function useTheme(s: Settings | undefined) {
     const root = document.documentElement;
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      const t = theme === "system" ? (mq.matches ? "dark" : "light") : theme;
+      // Altbase is dark only: a stored light or system theme still shows dark.
+      const t = "dark" as const;
       root.dataset.theme = t;
-      setDark(t !== "light");
+      setDark(true);
       if (accent) {
         const a = accentTokens(accent, t);
         root.dataset.accent = "";

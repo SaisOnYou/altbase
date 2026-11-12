@@ -26,7 +26,7 @@ export const AREAS: readonly AreaDef[] = [
     label: "settings.section.appearance",
     icon: "palette",
     groups: [
-      { ids: ["theme", "accent", "background", "density", "tabLayout", "language", "streamer", "greeting", "sounds"] },
+      { ids: ["accent", "background", "density", "tabLayout", "language", "streamer", "greeting", "sounds"] },
       { label: "settings.group.window", ids: ["autostart", "closeToTray", "skipSplash"] },
     ],
   },

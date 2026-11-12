@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AccountSummary, Favourite } from "../api";
 import { api } from "../api";
-import { useFavourites, useSetSettings, useSettings } from "../data";
+import { useFavourites } from "../data";
 import { accountName, Avatar } from "../features/accounts/shared";
 import { AREAS } from "../features/settings/areas";
 import { jumpTo } from "../features/settings/jump";
@@ -60,8 +60,6 @@ export function CommandPalette({ open, onClose, accounts, onAdd, onPlayAs, onOpe
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const favs = useFavourites().data;
-  const settings = useSettings().data;
-  const setSettings = useSetSettings();
   const streamer = useStreamer();
 
   useEffect(() => {
@@ -85,15 +83,6 @@ export function CommandPalette({ open, onClose, accounts, onAdd, onPlayAs, onOpe
     }
     for (const a of AREAS) out.push({ id: `area:${a.id}`, group: pages, text: `${t("app.nav.settings")} › ${t(a.label)}`, icon: a.icon, run: () => requestNavigation("settings", a.id) });
     out.push({ id: "act:add", group: actions, text: t("accounts.add.title"), icon: "plus", hint: "Ctrl+N", run: onAdd });
-    if (settings)
-      out.push({
-        id: "act:theme",
-        group: actions,
-        text: settings.theme === "dark" ? t("ui.lightTheme") : t("ui.darkTheme"),
-        more: "theme dark light",
-        icon: settings.theme === "dark" ? "sun" : "moon",
-        run: () => setSettings.mutate({ theme: settings.theme === "dark" ? "light" : "dark" }),
-      });
     out.push({ id: "act:streamer", group: actions, text: streamer ? t("palette.streamerOff") : t("palette.streamerOn"), more: "stream hide names obs", icon: "eye", run: () => setStreamer(!streamer) });
     out.push({
       id: "act:trim",
@@ -115,7 +104,7 @@ export function CommandPalette({ open, onClose, accounts, onAdd, onPlayAs, onOpe
       out.push({ id: `set:${e.id}`, group: t("app.nav.settings"), text: say(e.label), more: (e.aliases ?? []).join(" "), icon: "sliders", run: () => jumpTo(e.id) });
     }
     return out;
-  }, [open, accounts, favs, settings, streamer, setSettings, onAdd, onPlayAs, onOpenAccount, onPickFavourite]);
+  }, [open, accounts, favs, streamer, onAdd, onPlayAs, onOpenAccount, onPickFavourite]);
 
   const found = useMemo(() => {
     const words = fold(q).split(/\s+/).filter(Boolean);

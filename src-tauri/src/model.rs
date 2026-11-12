@@ -472,7 +472,7 @@ impl Default for Adaptive {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            theme: Theme::Light,
+            theme: Theme::Dark,
             tab_layout: TabLayout::Top,
             accent: String::new(),
             background_dim: 60,

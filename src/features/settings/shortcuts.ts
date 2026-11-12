@@ -8,6 +8,7 @@ export type Shortcut = { id: string; label: Key; combo: string };
 const go = (view: View, label: Key): Shortcut => ({ id: view, label, combo: shortcutFor(view) ?? "" });
 
 export const SHORTCUTS: readonly Shortcut[] = [
+  go("farm", "settings.shortcut.farm"),
   go("dashboard", "settings.shortcut.dashboard"),
   go("accounts", "settings.shortcut.accounts"),
   go("launch", "settings.shortcut.launch"),

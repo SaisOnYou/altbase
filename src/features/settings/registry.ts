@@ -141,10 +141,6 @@ const SETTINGS_ENTRIES: readonly Entry[] = [
   { id: "client", place: launching, label: "settings.client", more: "settings.clientInstallHint", control: ACTION, aliases: ["roblox", "install", "update", "version", "bloxstrap"] },
   { id: "autoUpdate", place: launching, label: "settings.autoUpdate", more: "settings.autoUpdateHint", field: "autoUpdate", control: SWITCH, aliases: ["roblox", "version"] },
 
-  {
-    id: "theme", place: appearance, label: "settings.theme", hint: "settings.themeHint", field: "theme", aliases: ["dark", "light", "mode"],
-    control: { kind: "segmented", options: [{ value: "dark", label: "settings.themeDark" }, { value: "light", label: "settings.themeLight" }, { value: "system", label: "settings.themeSystem" }] },
-  },
   { id: "accent", place: appearance, label: "settings.accentColour", hint: "settings.accentHint", field: "accent", control: CUSTOM, aliases: ["color", "colour", "highlight"] },
   { id: "background", place: appearance, label: "settings.background", more: "settings.backgroundHint", control: CUSTOM, aliases: ["wallpaper", "picture", "image"] },
   {

@@ -14,7 +14,7 @@
 @import "./styles/bg-image.css";
 @import "./styles/a11y.css";
 @import "./styles/motion.css";
-@import "./styles/warm.css";
+@import "./styles/neon.css";
 
 /* Utilities: bg-panel, text-dim, border-line, ... (the legacy names) and the new ones (bg-surface,
    text-fg-2, border-edge, text-ok ...). Tailwind's own palette is off: colour comes from tokens. */

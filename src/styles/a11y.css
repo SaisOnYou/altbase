@@ -98,40 +98,23 @@
 @layer tokens {
   /* More contrast: secondary text darkens to near the primary, hairlines and control edges firm up,
      and the accent deepens so its text clears 7:1. */
-  :root[data-theme="light"][data-contrast="more"] {
-    --fg: #111110;
-    --fg-2: #2b2a27;
-    --fg-3: #45433e;
-    --fg-disabled: #6f6c64;
-    --line: rgb(40 34 20 / 0.3);
-    --edge: #55524b;
-    --accent: #99441f;
-    --accent-text: #873a18;
-    --focus: #873a18;
-    --ok: #1f5229;
-    --info: #1f4a80;
-    --attention: #6e4505;
-    --warn: #574708;
-    --err: #8f1a14;
-    --scrollbar: rgb(40 34 20 / 0.45);
-  }
   :root[data-theme="dark"][data-contrast="more"] {
     --fg: #ffffff;
-    --fg-2: #ebe8df;
-    --fg-3: #d2cec3;
-    --fg-disabled: #9a968c;
-    --line: rgb(250 246 236 / 0.28);
-    --edge: #b3afa4;
-    --accent: #f09a7c;
-    --on-accent: #141413;
-    --accent-text: #f5ad93;
-    --focus: #f5ad93;
-    --ok: #9bdcaa;
-    --info: #abcaf2;
-    --attention: #f4c57f;
-    --warn: #ead98a;
-    --err: #f7a9a1;
-    --scrollbar: rgb(250 246 236 / 0.45);
+    --fg-2: #dde2fa;
+    --fg-3: #c0c7e6;
+    --fg-disabled: #8a91b0;
+    --line: rgb(160 180 255 / 0.32);
+    --edge: #a3abd0;
+    --accent: #7ff5ff;
+    --on-accent: #00141a;
+    --accent-text: #9ff8ff;
+    --focus: #9ff8ff;
+    --ok: #8affc4;
+    --info: #9fdcff;
+    --attention: #ffcf85;
+    --warn: #fff09e;
+    --err: #ff94a6;
+    --scrollbar: rgb(160 180 255 / 0.5);
   }
   /* A typeface drawn for legibility (Atkinson Hyperlegible), for everything but code. */
   :root[data-font="readable"] {

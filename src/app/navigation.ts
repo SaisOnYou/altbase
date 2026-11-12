@@ -3,9 +3,10 @@ import type { Key } from "../i18n";
 import type { IconName } from "../ui/Icon";
 import type { SettingsArea } from "../features/settings/areas";
 
-export type View = "dashboard" | "accounts" | "launch" | "performance" | "servers" | "monitor" | "discord" | "debug" | "settings";
+export type View = "farm" | "dashboard" | "accounts" | "launch" | "performance" | "servers" | "monitor" | "discord" | "debug" | "settings";
 
 export const VIEW_NAME: Record<View, Key> = {
+  farm: "app.nav.farm",
   dashboard: "app.nav.dashboard",
   accounts: "app.nav.accounts",
   launch: "app.nav.launch",
@@ -18,11 +19,12 @@ export const VIEW_NAME: Record<View, Key> = {
 };
 
 /** The island's places, by the ids `altbase.sectionOrder` keeps (Debug moved into Tools). */
-export const MAIN_SECTIONS = ["home", "play", "accounts", "performance"] as const;
+export const MAIN_SECTIONS = ["farm", "home", "play", "accounts", "performance"] as const;
 export const TOOL_SECTIONS = ["servers", "monitor", "discord", "debug"] as const;
 export type Section = (typeof MAIN_SECTIONS)[number] | (typeof TOOL_SECTIONS)[number];
 
 export const SECTION_VIEW: Record<Section, View> = {
+  farm: "farm",
   home: "dashboard",
   play: "launch",
   accounts: "accounts",
@@ -33,7 +35,8 @@ export const SECTION_VIEW: Record<Section, View> = {
   debug: "debug",
 };
 export const SECTION_ICON: Record<Section, IconName> = {
-  home: "home",
+  farm: "bolt",
+  home: "grid",
   play: "play",
   accounts: "accounts",
   performance: "gauge",
@@ -45,7 +48,8 @@ export const SECTION_ICON: Record<Section, IconName> = {
 
 /** Ctrl and a digit, by key position (so Ctrl+1 works where the digits need Shift). */
 export const SHORTCUT_VIEW: Record<string, View> = {
-  Digit1: "dashboard",
+  Digit1: "farm",
+  Digit0: "dashboard",
   Digit2: "accounts",
   Digit3: "launch",
   Digit4: "servers",

@@ -11,7 +11,7 @@ const HOLD_MS = 1000;
 /** The panic button: held for a second (pointer, Space or Enter), it cancels the batch, stops
  * rejoins and restarts, and terminates every Roblox client at once, Altbase's or not. In the app menu
  * and the island's running sheet. */
-export function KillAllButton({ role, onFired }: { role?: "menuitem"; onFired?: () => void }) {
+export function KillAllButton({ role, onFired, compact }: { role?: "menuitem"; onFired?: () => void; compact?: boolean }) {
   const qc = useQueryClient();
   const [held, setHeld] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export function KillAllButton({ role, onFired }: { role?: "menuitem"; onFired?: 
       type="button"
       // In a menu it is one of its items, so the menu's arrow keys reach it.
       role={role}
-      className="btn btn-danger hold-btn relative overflow-hidden w-full whitespace-normal leading-tight py-1.5"
+      className={`btn btn-danger hold-btn relative overflow-hidden leading-tight ${compact ? "whitespace-nowrap" : "w-full whitespace-normal py-1.5"}`}
       style={{ "--hold": `${HOLD_MS}ms` } as CSSProperties}
       data-held={held || undefined}
       data-busy={busy || undefined}

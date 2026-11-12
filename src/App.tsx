@@ -38,7 +38,7 @@ function Root() {
   const vault = useVault();
   const settings = useSettings();
   const setSettings = useSetSettings();
-  const dark = useTheme(settings.data);
+  useTheme(settings.data);
   const [lockReason, setLockReason] = useState<LockReason>("start");
   const [islandSlot, setIslandSlot] = useState<HTMLDivElement | null>(null);
   const manualLockAt = useRef(0);
@@ -146,9 +146,7 @@ function Root() {
         start={<AppMenu unlocked={unlocked} vaultMode={v?.mode} onRefresh={refresh} />}
         tools={
           <TitleTools
-            dark={dark}
             onRefresh={unlocked ? refresh : undefined}
-            onToggleTheme={s ? () => setSettings.mutate({ theme: dark ? "light" : "dark" }) : undefined}
             onLock={unlocked && v.mode === "master" ? lock : undefined}
             vaultMode={unlocked ? v.mode : undefined}
             sideTabs={s?.tabLayout === "side"}

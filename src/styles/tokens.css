@@ -1,57 +1,62 @@
-/* Altbase: warm paper and clay. Light is the default: an ivory ground, near-white surfaces that step
-   by warmth and hairlines, and one terracotta accent kept for the primary action, switches and focus.
-   Dark is the same palette at dusk: charcoal with a brown undertone, never blue-black. Navigation
-   selects with a quiet neutral fill (island.css), so clay only marks what you can act on.
-   Hue is for status, account identity and live data. A user accent (Settings) replaces the clay. */
+/* Altbase: neon on black. A near-black ground with a blue undertone, panels that step up in
+   indigo, and one electric cyan accent for what you act on: the primary action, switches, focus and
+   live progress. Magenta is the second neon, kept for highlights and the wordmark. Status hues are
+   bright so a wall of alts reads at a glance; each still comes with a shape and a word.
+   A user accent (Settings) replaces the cyan. Dark only. */
 @layer tokens {
   :root {
     color-scheme: dark;
     /* Ground and surfaces. --ground also paints the window before the UI (src-tauri main.rs). */
-    --ground: #262624;
-    --surface-1: #2e2d2a; /* panels, cards, the rail */
-    --surface-2: #383733; /* fields, tracks, secondary buttons */
-    --surface-3: #42403b; /* tags, pressed tracks */
-    --island: #302f2c;
-    --island-inset: #3d3c38;
-    --float: #33322f; /* menus, dialogs, toasts, sheets */
-    --thumb: #4a4843; /* segmented and tab thumbs: a neutral raised tile, not the accent */
-    --nav-on: #46443f; /* the current place in the island */
-    --hover: rgb(250 246 236 / 0.06);
-    --press: rgb(250 246 236 / 0.1);
-    --sel: rgb(250 246 236 / 0.08);
-    --pick: rgb(217 119 87 / 0.18); /* a pressed filter chip */
-    --pick-ring: rgb(217 119 87 / 0.5);
-    --line: rgb(250 246 236 / 0.09); /* hairlines; never the only cue */
-    --edge: #807c72; /* control boundaries: >= 3:1 on ground, surfaces and the island */
+    --ground: #07080f;
+    --surface-1: #0d0f1a; /* panels, cards, the rail */
+    --surface-2: #151829; /* fields, tracks, secondary buttons */
+    --surface-3: #1d2136; /* tags, pressed tracks */
+    --island: #0d0f1a;
+    --island-inset: #151829;
+    --float: #11131f; /* menus, dialogs, toasts, sheets */
+    --thumb: #262b45; /* segmented and tab thumbs: a neutral raised tile, not the accent */
+    --nav-on: rgb(0 229 255 / 0.13); /* the current place in the island */
+    --hover: rgb(140 160 255 / 0.07);
+    --press: rgb(140 160 255 / 0.12);
+    --sel: rgb(0 229 255 / 0.08);
+    --pick: rgb(0 229 255 / 0.14); /* a pressed filter chip */
+    --pick-ring: rgb(0 229 255 / 0.55);
+    --line: rgb(130 150 255 / 0.12); /* hairlines; never the only cue */
+    --edge: #646d94; /* control boundaries: >= 3:1 on ground, surfaces and the island */
     /* Text: 13.2 / 8.8 / 6.2 : 1 on the ground. */
-    --fg: #f2efe8;
-    --fg-2: #c9c5ba;
-    --fg-3: #aaa69b;
-    --fg-disabled: #75716a;
-    --on-fg: #262624; /* text on an --fg fill (tooltips, badges); never see-through */
+    --fg: #eef2ff;
+    --fg-2: #b3bad8;
+    --fg-3: #8b93b8;
+    --fg-disabled: #565d7d;
+    --on-fg: #07080f; /* text on an --fg fill (tooltips, badges); never see-through */
     /* The accent: the one primary action, switches, live progress and focus. */
-    --accent: #d97757;
-    --on-accent: #1f1e1c;
-    --accent-text: #e28c6e;
+    --accent: #00e5ff;
+    --on-accent: #00141a;
+    --accent-text: #3ff0ff;
     --accent-ring: transparent;
-    --focus: #e28c6e;
+    --focus: #5ef2ff;
     /* Status: always with a shape and a word. */
-    --ok: #7bc48a;
-    --info: #8db4e8;
-    --attention: #edb05c;
-    --warn: #dccb72;
-    --err: #f08a80;
-    --tint-pct: 16%;
-    --backdrop: rgb(20 19 17 / 0.6);
-    --scrollbar: rgb(250 246 236 / 0.2);
+    --ok: #3dff9a;
+    --info: #5cc8ff;
+    --attention: #ffb547;
+    --warn: #ffe45c;
+    --err: #ff5470;
+    --tint-pct: 14%;
+    /* The second neon and the glow every lit thing wears. */
+    --neon-2: #ff2bd6;
+    --neon-3: #a78bfa;
+    --glow: 0 0 0 1px rgb(0 229 255 / 0.45), 0 0 18px -2px rgb(0 229 255 / 0.45);
+    --glow-soft: 0 0 22px -6px rgb(0 229 255 / 0.35);
+    --backdrop: rgb(2 3 8 / 0.72);
+    --scrollbar: rgb(130 150 255 / 0.25);
 
     /* Shape. Concentric: an inner corner is the outer one less the padding. */
     --r-pill: 999px;
-    --r-xl: 22px;
-    --r-lg: 16px;
-    --r-md: 12px;
-    --r-sm: 10px;
-    --r-xs: 6px;
+    --r-xl: 16px;
+    --r-lg: 12px;
+    --r-md: 9px;
+    --r-sm: 7px;
+    --r-xs: 4px;
     /* Control heights: default, dense, row actions, tags. */
     --h-lg: 40px;
     --h-md: 34px;
@@ -69,8 +74,8 @@
 
     /* Type. Geist covers latin, cyrillic and vietnamese; the rest fall back to Windows' own faces. */
     --font-ui: "Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-    /* Titles, the wordmark and big numbers: a warm text serif, the one voice that sets the tone. */
-    --font-display: "Source Serif 4 Variable", "Georgia", "Cambria", serif;
+    /* Titles, the wordmark and big numbers: a squared techy face, the one voice that sets the tone. */
+    --font-display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
     --font-code: "Geist Mono Variable", ui-monospace, Consolas, monospace;
     --fs-micro: 11px;
     --fs-meta: 12px;
@@ -82,10 +87,10 @@
     --lh-body: 1.5;
 
     /* Only what floats: each shadow carries its own hairline ring, so floats need no border. */
-    --shadow-island: 0 0 0 1px rgb(250 246 236 / 0.07), 0 8px 24px -8px rgb(10 9 8 / 0.55), 0 2px 6px rgb(10 9 8 / 0.3);
-    --shadow-pop: 0 0 0 1px rgb(250 246 236 / 0.08), 0 16px 40px -10px rgb(10 9 8 / 0.6), 0 4px 12px rgb(10 9 8 / 0.3);
-    --shadow-dialog: 0 0 0 1px rgb(250 246 236 / 0.08), 0 32px 80px -16px rgb(10 9 8 / 0.7);
-    --shadow-thumb: 0 1px 2px rgb(10 9 8 / 0.45);
+    --shadow-island: 0 0 0 1px rgb(130 150 255 / 0.14), 0 8px 28px -8px rgb(0 0 0 / 0.8), 0 0 30px -12px rgb(0 229 255 / 0.25);
+    --shadow-pop: 0 0 0 1px rgb(130 150 255 / 0.18), 0 16px 40px -10px rgb(0 0 0 / 0.85), 0 0 28px -10px rgb(0 229 255 / 0.3);
+    --shadow-dialog: 0 0 0 1px rgb(130 150 255 / 0.2), 0 32px 80px -16px rgb(0 0 0 / 0.9), 0 0 50px -16px rgb(0 229 255 / 0.3);
+    --shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.6);
 
     /* Motion. Mirrored in src/ui/motion/tokens.ts (a dev check compares them). */
     --dur-instant: 80ms;
@@ -131,48 +136,6 @@
     --on: var(--accent);
     --on-ink: var(--on-accent);
     --ease: var(--ease-out);
-  }
-
-  :root[data-theme="light"] {
-    color-scheme: light;
-    --ground: #f4f2ec;
-    --surface-1: #fbfaf7;
-    --surface-2: #ece9e1;
-    --surface-3: #e3dfd4;
-    --island: #fbfaf7;
-    --island-inset: #ece9e1;
-    --float: #fefdfb;
-    --thumb: #fefdfb;
-    --nav-on: #e6e2d7;
-    --hover: rgb(60 50 30 / 0.05);
-    --press: rgb(60 50 30 / 0.09);
-    --sel: rgb(60 50 30 / 0.06);
-    --pick: rgb(184 92 60 / 0.12);
-    --pick-ring: rgb(184 92 60 / 0.45);
-    --line: rgb(60 50 30 / 0.11);
-    --edge: #8a867c;
-    /* Text: 14.9 / 8.2 / 5.1 : 1 on the ground. */
-    --fg: #1f1e1c;
-    --fg-2: #4a4842;
-    --fg-3: #696760;
-    --fg-disabled: #a19d93;
-    --on-fg: #f4f2ec;
-    --accent: #b85c3c;
-    --on-accent: #ffffff;
-    --accent-text: #a5502f;
-    --focus: #a5502f;
-    --ok: #2f6b3a;
-    --info: #2f5d9a;
-    --attention: #8c5a0a;
-    --warn: #6e5a12;
-    --err: #b3261e;
-    --tint-pct: 11%;
-    --backdrop: rgb(40 34 24 / 0.26);
-    --scrollbar: rgb(60 50 30 / 0.22);
-    --shadow-island: 0 0 0 1px rgb(60 50 30 / 0.08), 0 8px 24px -10px rgb(60 50 30 / 0.16), 0 2px 6px rgb(60 50 30 / 0.05);
-    --shadow-pop: 0 0 0 1px rgb(60 50 30 / 0.09), 0 16px 40px -10px rgb(60 50 30 / 0.18), 0 4px 12px rgb(60 50 30 / 0.06);
-    --shadow-dialog: 0 0 0 1px rgb(60 50 30 / 0.09), 0 32px 80px -16px rgb(60 50 30 / 0.28);
-    --shadow-thumb: 0 1px 3px rgb(60 50 30 / 0.14), 0 0 0 1px rgb(60 50 30 / 0.05);
   }
 
   /* A chosen accent (src/app/theme.ts sets these on <html>, contrast-checked per theme). */

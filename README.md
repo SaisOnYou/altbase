@@ -4,22 +4,30 @@
 
 # Altbase
 
-A local-only Roblox account manager and multi-client launcher for Windows.
+The Roblox alt farming command center for Windows.
 
 <br>
 
-<a href="https://github.com/SaisOnYou/altbase/releases/latest/download/Altbase-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-Altbase--Setup.exe-c4694a?style=for-the-badge&logo=windows&logoColor=white" alt="Download Altbase for Windows" height="44"></a>
+<a href="https://github.com/SaisOnYou/altbase/releases/latest/download/Altbase-Setup.exe"><img src="https://img.shields.io/badge/Download_for_Windows-Altbase--Setup.exe-00b8d4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Altbase for Windows" height="44"></a>
 
 <sub>Latest version · Windows 10 and 11 · free · <a href="../../releases">all releases</a></sub>
 
 </div>
 
-Altbase keeps your Roblox accounts signed in, launches any of them into any game, and runs several
-Roblox windows side by side. Everything stays on your PC: it talks to Roblox, and to Discord only if
+<p align="center"><img src="docs/farm.png" alt="Altbase's Farm page: a live board of every alt with its state, game, server, uptime, RAM and CPU" width="900"></p>
+
+Altbase runs your whole alt farm from one screen: every alt's state, server, uptime, RAM and CPU live,
+one-click launches for every idle alt, auto-rejoin when Roblox kicks one, and the memory tricks that let
+a normal PC hold far more clients. Everything stays on your PC: it talks to Roblox, and to Discord only if
 you add your own webhook for alerts. No account and no telemetry; updates come straight from this GitHub repository.
 
 ## Features
 
+- **Farm command center** — a live board of every alt (in game, joining, down, rejoining, idle) with
+  its game, server, uptime, RAM, CPU and rejoins; a HUD of the whole farm; an activity feed of every
+  launch, disconnect, freeze and rejoin. One click (or one key) to **launch every idle alt**, **send
+  them all to your main's server**, **hop the whole farm to a fresh server together**, **rejoin
+  everything that's down**, trim RAM, tile windows, or hold to stop it all.
 - **Accounts** — add each account once through Roblox's own sign-in page. See presence, Robux,
   friends and sign-in health at a glance; group, alias and favourite them. Make them friends, join
   a Roblox group with several at once, and set display names and privacy in bulk.
@@ -44,7 +52,7 @@ you add your own webhook for alerts. No account and no telemetry; updates come s
 - **Accessibility** — text size up to 150%, a higher-contrast palette, an easier-to-read font,
   thicker focus rings, reduced or no motion, and full keyboard use.
 - **Streamer mode** — one switch hides usernames, user IDs, job IDs and cookies.
-- **Warm light and dark themes**, in 18 languages, with an optional spoken greeting at start.
+- **Neon dark interface**, in 18 languages, with an optional spoken greeting at start.
 
 ## Install
 
