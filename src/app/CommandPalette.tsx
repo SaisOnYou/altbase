@@ -10,6 +10,7 @@ import { fold } from "../features/settings/search";
 import { t } from "../i18n";
 import { Icon, type IconName } from "../ui/Icon";
 import { setStreamer, useStreamer } from "../ui/streamer";
+import { setConsole } from "../features/console/useStatusConsole";
 import { toast, toastError } from "../ui/Toast";
 import { MAIN_SECTIONS, requestNavigation, SECTION_ICON, SECTION_VIEW, TOOL_SECTIONS, VIEW_NAME } from "./navigation";
 
@@ -83,6 +84,7 @@ export function CommandPalette({ open, onClose, accounts, onAdd, onPlayAs, onOpe
     }
     for (const a of AREAS) out.push({ id: `area:${a.id}`, group: pages, text: `${t("app.nav.settings")} › ${t(a.label)}`, icon: a.icon, run: () => requestNavigation("settings", a.id) });
     out.push({ id: "act:add", group: actions, text: t("accounts.add.title"), icon: "plus", hint: "Ctrl+N", run: onAdd });
+    out.push({ id: "act:console", group: actions, text: t("console.open"), more: "console cmd command prompt terminal status online offline", icon: "terminal", run: () => void setConsole(true).then(() => toast(t("console.opened")), toastError) });
     out.push({ id: "act:streamer", group: actions, text: streamer ? t("palette.streamerOff") : t("palette.streamerOn"), more: "stream hide names obs", icon: "eye", run: () => setStreamer(!streamer) });
     out.push({
       id: "act:trim",

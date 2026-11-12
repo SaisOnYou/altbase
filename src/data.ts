@@ -21,6 +21,7 @@ export const qk = {
   serverHistory: (id: number) => ["serverHistory", id] as const,
   metrics: ["metrics"],
   autostart: ["autostart"],
+  console: ["console"],
   appUpdate: ["appUpdate"],
   memory: ["memory"],
   system: ["system"],

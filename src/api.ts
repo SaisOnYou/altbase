@@ -300,6 +300,11 @@ export const api = {
   autostartGet: () => invoke<boolean>("autostart_get"),
   /** Turns starting with Windows on or off; what it is afterwards. */
   autostartSet: (on: boolean) => invoke<boolean>("autostart_set", { on }),
+  /** The status console: a console window beside Altbase showing the farm as text. */
+  consoleOpen: () => invoke<boolean>("console_open"),
+  consoleClose: () => invoke<boolean>("console_close"),
+  consoleIsOpen: () => invoke<boolean>("console_is_open"),
+  consoleWrite: (text: string) => invoke<void>("console_write", { text }),
   /** Physical memory by list, like RAMMap's Use Counts. */
   memoryLists: () => invoke<MemoryLists>("memory_lists"),
   /** RAMMap's Empty commands; Windows asks for administrator permission each time. */
@@ -338,6 +343,7 @@ export const events = {
   onAccountsChanged: (f: () => void): Promise<UnlistenFn> => listen("accounts://changed", f),
   onVaultLocked: (f: () => void): Promise<UnlistenFn> => listen("vault://locked", f),
   onInstancesChanged: (f: () => void): Promise<UnlistenFn> => listen("instances://changed", f),
+  onConsoleTick: (f: () => void): Promise<UnlistenFn> => listen("console://tick", f),
   onNotice: (f: (n: Notice) => void): Promise<UnlistenFn> => listen<Notice>("app://notice", (e) => f(e.payload)),
   onLog: (f: (r: LogRecord) => void): Promise<UnlistenFn> => listen<LogRecord>("log://log", (e) => f(e.payload)),
   onBulkProgress: (f: (p: BulkProgress) => void): Promise<UnlistenFn> => listen<BulkProgress>("bulk://progress", (e) => f(e.payload)),

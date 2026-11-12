@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test:sounds": "node --experimental-strip-types scripts/test-sounds.mjs",
     "test:liquid": "node --experimental-strip-types scripts/test-liquid.mjs",
+    "test:console": "node --experimental-strip-types scripts/test-console.mjs",
     "tauri": "tauri",
     "bindings": "cargo test --manifest-path src-tauri/Cargo.toml export_bindings"
   },

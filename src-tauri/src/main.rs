@@ -3,6 +3,7 @@
 #[macro_use]
 mod i18n;
 mod commands;
+mod console;
 mod cookie_export;
 mod diagnostics;
 mod discord;
@@ -518,6 +519,10 @@ fn main() {
     if let Some(code) = memory::elevated_main() {
         std::process::exit(code);
     }
+    // The status console (`console`): a second copy that only shows text, until Altbase exits.
+    if let Some(code) = console::console_main() {
+        std::process::exit(code);
+    }
     webview::clear_webview2_env();
     // Windows' language until the settings are read.
     i18n::set("");
@@ -656,6 +661,10 @@ fn main() {
             commands::say_greeting,
             commands::autostart_get,
             commands::autostart_set,
+            commands::console_open,
+            commands::console_close,
+            commands::console_is_open,
+            commands::console_write,
             commands::memory_lists,
             commands::memory_empty,
             commands::memory_trim_clients,

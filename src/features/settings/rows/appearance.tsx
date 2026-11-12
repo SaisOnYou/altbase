@@ -15,6 +15,8 @@ import { playSound, previewSound, setSoundPreferences, useSoundPreferences } fro
 import { sayGreeting, setGreeting, useGreeting } from "../../../ui/greeting";
 import { setStreamer, useStreamer } from "../../../ui/streamer";
 import { setStartFavourite, useStartFavourite } from "../../launch/startPlay";
+import { setConsole, setConsoleAtStart, useConsoleAtStart, useConsoleOpen } from "../../console/useStatusConsole";
+import { toastError } from "../../../ui/Toast";
 import { useRow } from "../kit/rowError";
 import { SettingRow } from "../kit/SettingRow";
 
@@ -282,3 +284,23 @@ export function StartPlayRow() {
   );
 }
 
+
+/** The status console: open now, and whether it opens with Altbase. */
+export function ConsoleAtStartRow() {
+  const row = useRow();
+  const atStart = useConsoleAtStart();
+  const open = useConsoleOpen();
+  return (
+    <SettingRow id="consoleAtStart">
+      <div className="flex items-center gap-3">
+        <Button size="md" icon="terminal" pressed={open} onClick={() => void setConsole(!open).catch(toastError)}>
+          {open ? t("console.close") : t("console.open")}
+        </Button>
+        <Switch label={t("settings.consoleAtStart")} checked={atStart} onChange={(v) => {
+          setConsoleAtStart(v);
+          if (v && !open) void setConsole(true).catch(toastError);
+        }} describedBy={row.describedBy} />
+      </div>
+    </SettingRow>
+  );
+}

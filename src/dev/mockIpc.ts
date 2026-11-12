@@ -99,6 +99,7 @@ let webhook: { id: string; token: string } | null = null;
 const WEBHOOK = /^https:\/\/(?:(?:ptb|canary)\.)?discord(?:app)?\.com\/api\/webhooks\/(\d{1,25})\/([A-Za-z0-9_-]{1,128})$/;
 const discordStatus = () => ({ configured: webhook !== null, webhook: webhook && `…${webhook.id.slice(-4)}` });
 let bandwidthActive = false;
+let mockConsole = false;
 let mockAutostart = false;
 /** The fake PC's memory lists in MB (`memory_lists`); trims and Empty commands move them. */
 let memInUse = 14_800, memModified = 900, memStandby = 11_200;
@@ -1220,6 +1221,18 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       } catch {
         // No speech here.
       }
+      return null;
+    case "console_open":
+      mockConsole = true;
+      return true;
+    case "console_close":
+      mockConsole = false;
+      return false;
+    case "console_is_open":
+      return mockConsole;
+    case "console_write":
+      // The demo's console: the last text, for a look in the browser's devtools.
+      (window as unknown as { __altbaseConsole?: string }).__altbaseConsole = String(args.text);
       return null;
     case "autostart_get":
       return mockAutostart;

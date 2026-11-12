@@ -13,7 +13,7 @@ import { SettingSection } from "./kit/SettingSection";
 import { dyn, shown } from "./registry";
 import { keyOf, placeNames, search, type Hit, type HitGroup } from "./search";
 import { SelfUpdateRow, VersionRow } from "./rows/about";
-import { AccentRow, BackgroundRow, GreetingRow, MotionRow, SoundRow, StreamerRow, AutostartRow, StartPlayRow } from "./rows/appearance";
+import { AccentRow, BackgroundRow, GreetingRow, MotionRow, SoundRow, StreamerRow, AutostartRow, StartPlayRow, ConsoleAtStartRow } from "./rows/appearance";
 import { BackupRow, BrowserDataRow, CleanLogsRow, DataFolderRow } from "./rows/data";
 import { BreakerRow, ClientCard, MultiRow, ShutdownRow } from "./rows/launching";
 import { EncryptionRow, MasterPasswordRow, PublicNetworkRow, RecoveryCodeRow } from "./rows/security";
@@ -34,6 +34,7 @@ const RENDERERS: RowRenderers = {
   motion: MotionRow,
   autostart: AutostartRow,
   startPlay: StartPlayRow,
+  consoleAtStart: ConsoleAtStartRow,
   textSize: TextSizeRow,
   contrast: ContrastSettingRow,
   readableFont: ReadableFontRow,

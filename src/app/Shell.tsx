@@ -17,6 +17,7 @@ import { LaunchFlight } from "../features/launch/LaunchButton";
 import { lastLaunchAccount } from "../features/launch/launchQueue";
 import { LaunchView } from "../features/launch/LaunchView";
 import { useStartPlay } from "../features/launch/startPlay";
+import { useStatusConsole } from "../features/console/useStatusConsole";
 import { isLive } from "../features/launch/Running";
 import { draftFor, EMPTY_DRAFT, type Draft } from "../features/launch/target";
 import { MonitorView } from "../features/monitor/MonitorView";
@@ -73,6 +74,7 @@ export function Shell({ vault, settings, islandSlot }: { vault: VaultStatus; set
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const homeTabs = useHomeTabs(accounts.data);
   useStartPlay(accounts.data);
+  useStatusConsole(accounts.data);
   const [sectionOrder, setSectionOrder] = useSectionOrder();
   // The game the Servers view shows.
   const [serversPlace, setServersPlace] = useState<number | null>(null);

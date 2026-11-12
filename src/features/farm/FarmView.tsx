@@ -26,6 +26,7 @@ import { StatusPill, TONE_COLOR, TONE_SHAPE, type Tone } from "../../ui/Status";
 import { toast, toastError } from "../../ui/Toast";
 import { accountName, Avatar } from "../accounts/shared";
 import { KillAllButton } from "../../app/KillAll";
+import { setConsole, useConsoleOpen } from "../console/useStatusConsole";
 import { requestNavigation } from "../../app/navigation";
 import { pickHop } from "../dashboard/ClientMenu";
 import { launchBlocked, launchEach, launchOne, launchSame, sessionFps, useLaunchStep } from "../launch/launchQueue";
@@ -117,6 +118,7 @@ export function FarmView({ accounts, onAdd }: { accounts: AccountSummary[]; onAd
   const batch = useBulk().data;
   const network = useNetwork().data;
   const step = useLaunchStep();
+  const consoleOpen = useConsoleOpen();
   const main = accounts.find((a) => a.main && a.status === "valid");
   const mainPresence = usePresence(main ? [main.id] : []).data?.get(main?.id ?? -1);
 
@@ -307,9 +309,10 @@ export function FarmView({ accounts, onAdd }: { accounts: AccountSummary[]; onAd
         <span className="farm-actions-sep" aria-hidden="true" />
         <Button icon="database" busy={busy === "trim"} disabled={!runningCount} onClick={trimAll}>{t("farm.trimAll")}</Button>
         <Button icon="grid" busy={busy === "tile"} disabled={!runningCount} onClick={tile}>{t("farm.tile")}</Button>
-        <Button icon="minimize" disabled={!runningCount} onClick={() => showAll("minimize")}>{t("farm.minimizeAll")}</Button>
-        <Button icon="monitor" disabled={!runningCount} onClick={() => showAll("restore")}>{t("farm.restoreAll")}</Button>
+        <IconButton icon="minimize" label={t("farm.minimizeAll")} disabled={!runningCount} onClick={() => showAll("minimize")} />
+        <IconButton icon="layoutTop" label={t("farm.restoreAll")} disabled={!runningCount} onClick={() => showAll("restore")} />
         <span className="flex-1" />
+        <Button icon="terminal" pressed={consoleOpen} onClick={() => void setConsole(!consoleOpen).catch(toastError)}>{t("console.open")}</Button>
         <KillAllButton compact />
       </div>
       <p className="farm-keys">{t("farm.keys")}</p>

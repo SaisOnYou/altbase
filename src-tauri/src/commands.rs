@@ -1361,6 +1361,32 @@ pub fn autostart_set(on: bool) -> Result<bool> {
     Ok(crate::autostart::enabled())
 }
 
+/// Opens the status console (`console`); whether it is open afterwards.
+#[tauri::command]
+pub fn console_open(app: AppHandle, s: State<'_, App>) -> Result<bool> {
+    crate::console::open(&app, &s.data_dir)?;
+    Ok(crate::console::is_open())
+}
+
+/// Closes the status console.
+#[tauri::command]
+pub fn console_close(s: State<'_, App>) -> bool {
+    crate::console::close(&s.data_dir);
+    false
+}
+
+/// Whether the status console is open (closing its window closes it).
+#[tauri::command]
+pub fn console_is_open() -> bool {
+    crate::console::is_open()
+}
+
+/// The status console's next text (lines with ANSI colours).
+#[tauri::command]
+pub fn console_write(s: State<'_, App>, text: String) -> Result<()> {
+    crate::console::write(&s.data_dir, &text)
+}
+
 /// Physical memory by list, like RAMMap's Use Counts (`memory::lists`).
 #[tauri::command]
 pub async fn memory_lists() -> crate::memory::MemoryLists {

@@ -43,6 +43,7 @@ export type Field =
   | "local:streamer"
   | "local:motion"
   | "local:startPlay"
+  | "local:consoleAtStart"
   | "local:textSize"
   | "local:contrast"
   | "local:readableFont"
@@ -175,6 +176,10 @@ const SETTINGS_ENTRIES: readonly Entry[] = [
   { id: "startPlay", place: launching, label: "settings.startPlay", hint: "settings.startPlayShort", more: "settings.startPlayHint", field: "local:startPlay", control: CUSTOM, aliases: ["startup", "auto launch", "boot", "favourite", "unattended"] },
   { id: "autostart", place: appearance, label: "settings.autostart", hint: "settings.autostartHint", control: CUSTOM, aliases: ["startup", "boot", "login", "sign in", "windows", "run"] },
   { id: "closeToTray", place: appearance, label: "settings.closeToTray", hint: "settings.closeToTrayHint", field: "closeToTray", control: SWITCH, aliases: ["minimize", "hide"] },
+  {
+    id: "consoleAtStart", place: appearance, label: "settings.consoleAtStart", hint: "settings.consoleAtStartHint", field: "local:consoleAtStart", control: CUSTOM,
+    aliases: ["console", "command prompt", "cmd", "terminal", "status", "second screen", "online", "offline"],
+  },
   { id: "skipSplash", place: appearance, label: "settings.skipSplash", hint: "settings.skipSplashHint", field: "skipSplash", control: SWITCH, aliases: ["intro", "startup", "animation"] },
 
   {
